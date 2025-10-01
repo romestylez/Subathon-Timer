@@ -4,22 +4,57 @@
   <meta charset="utf-8">
   <title>Subathon Rewards</title>
   <style>
+  @font-face {
+      font-family: 'BOZART';
+      src: url('fonts/BOZART.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+    }
     body { background: transparent; margin: 0; overflow: hidden; }
 
     #slider {
       font-family: 'Bebas Neue', sans-serif;
       font-size: 36px;
       color: #005fa3;
+	  margin-left:5px;
       text-align: left;
       text-shadow:
         -1px -1px 0 #000,
          1px -1px 0 #000,
         -1px  1px 0 #000,
          1px  1px 0 #000;
+      position: relative;
+      width: 100%;
+      height: 100px; /* fixed height for smooth transitions */
+      overflow: hidden;
     }
 
-    #slider div { display: none; line-height: 1.2; }
-    #slider div.active { display: block; }
+    #slider div {
+      position: absolute;
+      width: 100%;
+      opacity: 0;
+      transform: translateX(30px);
+    }
+
+    #slider div.active {
+      opacity: 1;
+      transform: translateX(0);
+      animation: slideIn 1.2s ease forwards;
+    }
+
+    #slider div.exit {
+      animation: slideOut 1.2s ease forwards;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(300px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes slideOut {
+      from { opacity: 1; transform: translateX(0); }
+      to   { opacity: 0; transform: translateX(-30px); }
+    }
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
 </head>
@@ -43,12 +78,25 @@
         const slides = slider.querySelectorAll("div");
         let current = 0;
         function showSlide() {
-          slides.forEach((s, i) => s.classList.toggle("active", i === current));
+          const prev = slides[current];
           current = (current + 1) % slides.length;
+          const next = slides[current];
+
+          if (prev) {
+            prev.classList.remove("active");
+            prev.classList.add("exit");
+            prev.addEventListener("animationend", () => {
+              prev.classList.remove("exit");
+              prev.style.opacity = 0;
+            }, { once: true });
+          }
+
+          next.classList.add("active");
         }
+
         if (slides.length > 0) {
-          showSlide();
-          setInterval(showSlide, 4000); // alle 4 Sekunden wechseln
+          slides[0].classList.add("active");
+          setInterval(showSlide, 6000); // switch every 4s
         }
       });
   </script>
