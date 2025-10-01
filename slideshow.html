@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Subathon Rewards</title>
+  <style>
+    body { background: transparent; margin: 0; overflow: hidden; }
+
+    #slider {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 36px;
+      color: #005fa3;
+      text-align: left;
+      text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000;
+    }
+
+    #slider div { display: none; line-height: 1.2; }
+    #slider div.active { display: block; }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="slider"></div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const streamer = urlParams.get("streamer") || "1";
+    const slider = document.getElementById("slider");
+
+    fetch(`http://localhost:5000/rewards?streamer=${streamer}`)
+      .then(r => r.json())
+      .then(rewards => {
+        rewards.forEach(r => {
+          const div = document.createElement("div");
+          div.innerHTML = `<b>${r.name}</b><br>${r.minutes} Minuten`;
+          slider.appendChild(div);
+        });
+
+        const slides = slider.querySelectorAll("div");
+        let current = 0;
+        function showSlide() {
+          slides.forEach((s, i) => s.classList.toggle("active", i === current));
+          current = (current + 1) % slides.length;
+        }
+        if (slides.length > 0) {
+          showSlide();
+          setInterval(showSlide, 4000); // alle 4 Sekunden wechseln
+        }
+      });
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "twitch": {
+    "sub_t1": 7,
+    "sub_t2": 15,
+    "sub_t3": 40,
+    "bits_per_100": 2
+  },
+  "kick": {
+    "sub": 15,
+    "kicks_per_100": 4
+  },
+  "tipeee": {
+    "minutes_per_eur": 2
+  },
+  "timer": {
+    "start_minutes": 60,
+    "max_minutes": 0
+  }
+}

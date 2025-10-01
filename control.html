@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Subathon Control</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #222;
+      color: #eee;
+      text-align: center;
+      padding: 20px;
+    }
+    h1 { color: #ffcc00; }
+    button {
+      margin: 10px;
+      padding: 15px 30px;
+      font-size: 18px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background: #444;
+      color: #fff;
+      transition: background 0.2s;
+    }
+    button:hover { background: #666; }
+    .time-btn { background: #0066cc; }
+    .pause { background: #cc3300; }
+    .resume { background: #339933; }
+    .toggle { background: #9966cc; }
+    #status { margin-top: 20px; font-size: 20px; }
+    #timer {
+      margin-top: 20px;
+      font-size: 40px;
+      font-weight: bold;
+      color: #00ccff;
+    }
+  </style>
+</head>
+<body>
+  <h1>Subathon Control</h1>
+
+  <div id="timer">00:00:00</div>
+  <div id="status">Status: -</div>
+
+  <div>
+    <button class="pause" onclick="send('/pause')">Pause</button>
+    <button class="resume" onclick="send('/resume')">Resume</button>
+  </div>
+
+  <div>
+    <button class="time-btn" onclick="send('/time?delta=5')">+5 Min</button>
+    <button class="time-btn" onclick="send('/time?delta=10')">+10 Min</button>
+    <button class="time-btn" onclick="send('/time?minusdelta=5')">-5 Min</button>
+    <button class="time-btn" onclick="send('/time?minusdelta=10')">-10 Min</button>
+  </div>
+
+  <script>
+    const BASE = "http://localhost:5000";
+
+    function formatTime(sec) {
+      let h = Math.floor(sec / 3600);
+      let m = Math.floor((sec % 3600) / 60);
+      let s = sec % 60;
+      return (
+        String(h).padStart(2, "0") + ":" +
+        String(m).padStart(2, "0") + ":" +
+        String(s).padStart(2, "0")
+      );
+    }
+
+    function updateState(data) {
+      document.getElementById("timer").innerText = formatTime(data.remaining);
+      document.getElementById("status").innerText =
+        `Remaining: ${Math.floor(data.remaining/60)} min | Paused: ${data.paused}`;
+    }
+
+    function send(path) {
+      fetch(BASE + path)
+        .then(r => r.json())
+        .then(updateState)
+        .catch(err => {
+          document.getElementById("status").innerText = "Error: " + err;
+        });
+    }
+
+    // Auto-Update jede Sekunde
+    setInterval(() => {
+      fetch(BASE + "/state")
+        .then(r => r.json())
+        .then(updateState);
+    }, 1000);
+  </script>
+</body>
+</html>
