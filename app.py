@@ -124,37 +124,52 @@ def handle_event(platform, data, config):
     print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2)}")
     log_event(platform, data)
 
-    # Twitch subs (incl. Prime & multi-month via amount)
+    # Twitch/Kick subs via StreamElements (RESUB-FIX + GIFT-FIX)
     if data.get("type") == "subscriber":
-        tier_raw = str(data.get("data", {}).get("tier", "1000")).lower()
-        amount = int(data.get("data", {}).get("amount", 1))  # multi-month / amount
+        d = data.get("data", {})
+        provider = str(data.get("provider", "")).lower()
+        tier_raw = str(d.get("tier", "1000")).lower()
 
-        if tier_raw in ["1000", "prime"]:
-            tier_minutes = config["twitch"]["sub_t1"]
-        elif tier_raw == "2000":
-            tier_minutes = config["twitch"]["sub_t2"]
-        elif tier_raw == "3000":
-            tier_minutes = config["twitch"]["sub_t3"]
+        # --- Kick subs via SE: feste Minuten aus config["kick"]["sub"]
+        # Erkennen über Provider oder Plattformnamen
+        if "kick" in provider or "kick" in platform.lower():
+            if "kick" in config:
+                minutes_to_add = config["kick"]["sub"]
         else:
-            tier_minutes = config["twitch"]["sub_t1"]  # fallback to T1
+            # --- Twitch subs/resubs: gifted-Flag ignorieren (wird bei communityGiftPurchase gezählt)
+            if d.get("gifted", False):
+                return  # gifted subscriber-event ignorieren, sonst doppelt
 
-        minutes_to_add = tier_minutes * max(1, amount)
+            # amount ist die Laufzeit in Monaten (11, 48, …) -> niemals multiplizieren
+            # wir zählen jeden (re)sub nur 1x
+            if tier_raw in ["1000", "prime"]:
+                tier_minutes = config["twitch"]["sub_t1"]
+            elif tier_raw == "2000":
+                tier_minutes = config["twitch"]["sub_t2"]
+            elif tier_raw == "3000":
+                tier_minutes = config["twitch"]["sub_t3"]
+            else:
+                tier_minutes = config["twitch"]["sub_t1"]  # fallback
 
-    # Bits
-    elif data.get("type") == "cheer":
-        bits = int(data.get("data", {}).get("amount", 0))
-        minutes_to_add = (bits // 100) * config["twitch"]["bits_per_100"]
+            minutes_to_add = tier_minutes  # immer nur 1x
 
-    # Gifted subs
+    # Gifted subs (Bundle) – korrekt nach Anzahl
     elif data.get("type") == "communityGiftPurchase":
-        gift_amount = int(data.get("data", {}).get("amount", 1))
-        tier_raw = str(data.get("data", {}).get("tier", "1000")).lower()
+        d = data.get("data", {})
+        gift_amount = int(d.get("amount", 1))
+        tier_raw = str(d.get("tier", "1000")).lower()
+
         if tier_raw in ["1000", "prime"]:
             minutes_to_add = gift_amount * config["twitch"]["sub_t1"]
         elif tier_raw == "2000":
             minutes_to_add = gift_amount * config["twitch"]["sub_t2"]
         elif tier_raw == "3000":
             minutes_to_add = gift_amount * config["twitch"]["sub_t3"]
+
+    # Bits
+    elif data.get("type") == "cheer":
+        bits = int(data.get("data", {}).get("amount", 0))
+        minutes_to_add = (bits // 100) * config["twitch"]["bits_per_100"]
 
     # Donations via Tipeee (only donation type is used)
     elif data.get("type") == "donation" and "tipeee" in config:
@@ -165,11 +180,6 @@ def handle_event(platform, data, config):
     elif data.get("type") == "tip" and "streamelements" in config:
         amount = float(data.get("data", {}).get("amount", 0))
         minutes_to_add = int(amount * config["streamelements"]["minutes_per_eur"])
-
-    # Kick subs (via SE)
-    elif data.get("type") == "subscriber" and "kick" in platform.lower():
-        if "kick" in config:
-            minutes_to_add = config["kick"]["sub"]
 
     # Kick gifts (via Kick Chat)
     elif data.get("type") == "kick_gift":
