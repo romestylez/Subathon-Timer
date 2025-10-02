@@ -11,51 +11,55 @@ import time
 import datetime
 
 # --------------------
-# Hilfsfunktion für Timestamp
+# Helper function for timestamp
 # --------------------
 def ts():
     return datetime.datetime.now().strftime("%d.%m.%Y - %H:%M")
 
 # --------------------
-# ENV Variablen laden
+# Load ENV variables
 # --------------------
 load_dotenv()
 
 # Streamer 1
 SE_TWITCH_TOKEN  = os.getenv("SE_TWITCH_TOKEN")
 SE_KICK_TOKEN    = os.getenv("SE_KICK_TOKEN")
-
-# Streamer 2 (optional)
-SE2_TWITCH_TOKEN = os.getenv("SE2_TWITCH_TOKEN")
-
-# Kick (optional für Streamer1)
 KICK_APP_KEY     = os.getenv("KICK_APP_KEY")
 KICK_CLUSTER     = os.getenv("KICK_CLUSTER")
 KICK_CHATROOM_ID = os.getenv("KICK_CHATROOM_ID")
+TIPEEE_API_KEY   = os.getenv("TIPEEE_API_KEY")
+
+# Streamer 2
+SE2_TWITCH_TOKEN  = os.getenv("SE2_TWITCH_TOKEN")
+SE2_KICK_TOKEN    = os.getenv("SE2_KICK_TOKEN")
+KICK_APP_KEY2     = os.getenv("KICK_APP_KEY2")
+KICK_CLUSTER2     = os.getenv("KICK_CLUSTER2")
+KICK_CHATROOM_ID2 = os.getenv("KICK_CHATROOM_ID2")
+TIPEEE_API_KEY2   = os.getenv("TIPEEE_API_KEY2")
 
 # --------------------
-# Config laden
+# Load config
 # --------------------
 with open("config.json", "r", encoding="utf-8") as f:
     CONFIG1 = json.load(f)
 
 CONFIG2 = None
-if SE2_TWITCH_TOKEN:  # nur laden wenn zweiter Token vorhanden
+if SE2_TWITCH_TOKEN:  # only load if token for Streamer 2 is present
     try:
         with open("config2.json", "r", encoding="utf-8") as f:
             CONFIG2 = json.load(f)
     except FileNotFoundError:
-        print(f"[{ts()}] [WARN] SE2_TWITCH_TOKEN ist gesetzt, aber config2.json fehlt!")
+        print(f"[{ts()}] [WARN] SE2_TWITCH_TOKEN is set, but config2.json is missing!")
 
 # --------------------
-# Flask + SocketIO Setup
+# Flask + SocketIO setup
 # --------------------
 app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --------------------
-# Timer Variablen
+# Timer variables
 # --------------------
 remaining = CONFIG1["timer"]["start_minutes"] * 60
 paused = False
@@ -69,7 +73,7 @@ def save_state():
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump({"remaining": remaining, "paused": paused}, f)
     except Exception as e:
-        print(f"[{ts()}] [STATE] Fehler beim Speichern:", e)
+        print(f"[{ts()}] [STATE] Error while saving:", e)
 
 def load_state():
     global remaining, paused
@@ -79,24 +83,24 @@ def load_state():
                 state = json.load(f)
                 remaining = state.get("remaining", remaining)
                 paused = state.get("paused", paused)
-                print(f"[{ts()}] [STATE] Wiederhergestellt: {remaining//60} Minuten, paused={paused}")
+                print(f"[{ts()}] [STATE] Restored: {remaining//60} minutes, paused={paused}")
         except Exception as e:
-            print(f"[{ts()}] [STATE] Fehler beim Laden:", e)
+            print(f"[{ts()}] [STATE] Error while loading:", e)
 
 def log_event(platform, data):
-    """Schreibt alle RAW Events zusätzlich in ein Logfile"""
+    """Write all RAW events additionally into a logfile"""
     try:
         ts_str = ts()
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{ts_str}] [{platform}] RAW EVENT: {json.dumps(data, ensure_ascii=False)}\n")
     except Exception as e:
-        print(f"[{ts()}] [LOG] Fehler beim Schreiben in events.log:", e)
+        print(f"[{ts()}] [LOG] Error while writing to events.log:", e)
 
-# beim Start vorhandenen State laden
+# Load existing state on startup
 load_state()
 
 # --------------------
-# Timer Loop
+# Timer loop
 # --------------------
 def timer_loop():
     global remaining
@@ -108,20 +112,20 @@ def timer_loop():
         socketio.sleep(1)
 
 # --------------------
-# Events verarbeiten
+# Handle events
 # --------------------
 def handle_event(platform, data, config):
     global remaining
     minutes_to_add = 0
 
-    # RAW Event ins Logfile + Konsole
+    # RAW event to logfile + console
     print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2)}")
     log_event(platform, data)
 
-    # Twitch Subs (inkl. Prime & Multi-Month via amount)
+    # Twitch subs (incl. Prime & multi-month via amount)
     if data.get("type") == "subscriber":
         tier_raw = str(data.get("data", {}).get("tier", "1000")).lower()
-        amount = int(data.get("data", {}).get("amount", 1))  # Multi-Month / Anzahl
+        amount = int(data.get("data", {}).get("amount", 1))  # multi-month / amount
 
         if tier_raw in ["1000", "prime"]:
             tier_minutes = config["twitch"]["sub_t1"]
@@ -130,7 +134,7 @@ def handle_event(platform, data, config):
         elif tier_raw == "3000":
             tier_minutes = config["twitch"]["sub_t3"]
         else:
-            tier_minutes = config["twitch"]["sub_t1"]  # Fallback auf T1
+            tier_minutes = config["twitch"]["sub_t1"]  # fallback to T1
 
         minutes_to_add = tier_minutes * max(1, amount)
 
@@ -139,7 +143,7 @@ def handle_event(platform, data, config):
         bits = int(data.get("data", {}).get("amount", 0))
         minutes_to_add = (bits // 100) * config["twitch"]["bits_per_100"]
 
-    # Gifted Subs
+    # Gifted subs
     elif data.get("type") == "communityGiftPurchase":
         gift_amount = int(data.get("data", {}).get("amount", 1))
         tier_raw = str(data.get("data", {}).get("tier", "1000")).lower()
@@ -150,22 +154,22 @@ def handle_event(platform, data, config):
         elif tier_raw == "3000":
             minutes_to_add = gift_amount * config["twitch"]["sub_t3"]
 
-    # Donations über Tipeee
+    # Donations via Tipeee
     elif data.get("type") == "donation" and "tipeee" in config:
         amount = float(data.get("amount", 0))
         minutes_to_add = int(amount * config["tipeee"]["minutes_per_eur"])
 
-    # Donations über StreamElements
+    # Donations via StreamElements
     elif data.get("type") == "tip" and "streamelements" in config:
         amount = float(data.get("data", {}).get("amount", 0))
         minutes_to_add = int(amount * config["streamelements"]["minutes_per_eur"])
 
-    # Kick Subs
+    # Kick subs
     elif data.get("type") == "subscriber" and "kick" in platform.lower():
         if "kick" in config:
             minutes_to_add = config["kick"]["sub"]
 
-    # Kick Gifts
+    # Kick gifts
     elif data.get("type") == "kick_gift":
         if "kick" in config:
             amount = int(data.get("amount", 0))
@@ -176,18 +180,18 @@ def handle_event(platform, data, config):
             remaining += minutes_to_add * 60
             save_state()
             new_state = {"remaining": remaining, "paused": paused}
-        print(f"[{ts()}] [{platform}] +{minutes_to_add} Minuten → {remaining//60} min gesamt")
+        print(f"[{ts()}] [{platform}] +{minutes_to_add} minutes → {remaining//60} min total")
         socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
 # --------------------
-# StreamElements WS mit Auto-Reconnect
+# StreamElements WS with auto-reconnect
 # --------------------
 def start_client(name, token, config):
     url = "wss://astro.streamelements.com"
 
     def run_ws():
         def on_open(ws):
-            print(f"[{ts()}] [{name}] Verbunden")
+            print(f"[{ts()}] [{name}] Connected")
 
         def on_message(ws, message):
             msg = json.loads(message)
@@ -198,10 +202,10 @@ def start_client(name, token, config):
                 handle_event(name, data, config)
 
         def on_error(ws, error):
-            print(f"[{ts()}] [{name}] Fehler: {error}")
+            print(f"[{ts()}] [{name}] Error: {error}")
 
         def on_close(ws, close_status_code, close_msg):
-            print(f"[{ts()}] [{name}] Verbindung geschlossen, Reconnect in 1s")
+            print(f"[{ts()}] [{name}] Connection closed, reconnecting in 1s")
             time.sleep(1)
             run_ws()
 
@@ -212,7 +216,7 @@ def start_client(name, token, config):
                 "data": {"topic": topic, "token": token, "token_type": "jwt"},
             }
             ws.send(json.dumps(sub))
-            print(f"[{ts()}] [{name}] Subscribed zu {topic}")
+            print(f"[{ts()}] [{name}] Subscribed to {topic}")
 
         ws = websocket.WebSocketApp(
             url,
@@ -226,11 +230,11 @@ def start_client(name, token, config):
     threading.Thread(target=run_ws, daemon=True).start()
 
 # --------------------
-# Flask Routes
+# Flask routes
 # --------------------
 @app.route("/")
 def index():
-    return "Subathon Timer läuft!"
+    return "Subathon timer is running!"
 
 @app.route("/rewards")
 def rewards():
@@ -240,7 +244,7 @@ def rewards():
     elif streamer == "2" and CONFIG2:
         cfg = CONFIG2
     else:
-        return jsonify({"error": "Streamer nicht verfügbar"}), 400
+        return jsonify({"error": "Streamer not available"}), 400
 
     rewards_list = [
         {"name": "T 1 Sub", "minutes": cfg["twitch"]["sub_t1"]},
@@ -296,19 +300,19 @@ def change_time():
     minusdelta_str = request.args.get("minusdelta")
 
     if delta_str is None and minusdelta_str is None:
-        return jsonify({"error": "delta oder minusdelta fehlt"}), 400
+        return jsonify({"error": "delta or minusdelta is missing"}), 400
 
     try:
         if delta_str is not None:
             delta = int(delta_str)
             if delta < 0:
-                return jsonify({"error": "delta darf nicht negativ sein, nutze minusdelta"}), 400
+                return jsonify({"error": "delta cannot be negative, use minusdelta"}), 400
         else:
             delta = -int(minusdelta_str)
             if delta > 0:
-                return jsonify({"error": "minusdelta darf nicht negativ sein"}), 400
+                return jsonify({"error": "minusdelta cannot be negative"}), 400
     except ValueError:
-        return jsonify({"error": "delta/minusdelta muss Zahl sein"}), 400
+        return jsonify({"error": "delta/minusdelta must be a number"}), 400
 
     with lock:
         remaining = max(0, remaining + delta * 60)
@@ -316,22 +320,27 @@ def change_time():
         new_state = {"remaining": remaining, "paused": paused}
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
-    print(f"[{ts()}] [MANUAL] {delta:+} Minuten → {remaining//60} min gesamt")
+    print(f"[{ts()}] [MANUAL] {delta:+} minutes → {remaining//60} min total")
 
     return jsonify(new_state)
 
 # --------------------
-# Main Start
+# Main start
 # --------------------
 if __name__ == "__main__":
     socketio.start_background_task(timer_loop)
 
+    # Streamer 1
     if SE_TWITCH_TOKEN:
         start_client("SE-Twitch1", SE_TWITCH_TOKEN, CONFIG1)
+    if SE_KICK_TOKEN:
+        start_client("SE-Kick1", SE_KICK_TOKEN, CONFIG1)
+
+    # Streamer 2
     if SE2_TWITCH_TOKEN and CONFIG2:
         start_client("SE-Twitch2", SE2_TWITCH_TOKEN, CONFIG2)
-    if SE_KICK_TOKEN:
-        start_client("SE-Kick", SE_KICK_TOKEN, CONFIG1)
+    if SE2_KICK_TOKEN and CONFIG2:
+        start_client("SE-Kick2", SE2_KICK_TOKEN, CONFIG2)
 
-    print(f"[{ts()}] [APP] Subathon Timer läuft auf http://localhost:5000")
+    print(f"[{ts()}] [APP] Subathon timer running at http://localhost:5000")
     socketio.run(app, host="0.0.0.0", port=5000)
