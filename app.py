@@ -106,12 +106,20 @@ load_state()
 # --------------------
 def timer_loop():
     global remaining
+    counter = 0
     while True:
         with lock:
             if not paused and remaining > 0:
                 remaining -= 1
             socketio.emit("timer_update", {"remaining": remaining, "paused": paused})
+
+            # alle 300 Sekunden (= 5 Minuten) State speichern
+            counter += 1
+            if counter >= 300:
+                save_state()
+                counter = 0
         socketio.sleep(1)
+
 
 # --------------------
 # Handle events
@@ -279,7 +287,7 @@ def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
 
     def on_close(ws, *a):
         print(f"[{ts()}] [{name}] KickChat closed, reconnect in 5s")
-        time.sleep(5)
+        time.sleep(2)
         connect_kick_chat(name, app_key, cluster, chatroom_id, config)
 
     def on_error(ws, error):
@@ -340,7 +348,7 @@ def start_tipeee(name, api_key, config):
             sio.wait()
         except Exception as e:
             print(f"[{ts()}] [{name}] Tipeee connection error:", e)
-            time.sleep(5)
+            time.sleep(1)
             run()
 
     threading.Thread(target=run, daemon=True).start()
