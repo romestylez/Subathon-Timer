@@ -2,9 +2,10 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Knewave&display=swap" rel="stylesheet">
 
   <style>
+
     body { 
       background: transparent; 
       margin: 0; 
@@ -12,6 +13,7 @@
     }
 
     #wrapper {
+      position: relative;            /* Reference for the absolutely positioned "Paused" text */
       display: inline-block;
       text-align: left;
     }
@@ -22,6 +24,7 @@
       color: #005fa3;
       font-weight: bold;
       margin-left: 5px;
+	  margin-top: 15px;
       display: flex;
       align-items: center;
       text-shadow:
@@ -29,19 +32,37 @@
          1px -1px 0 #000,
         -1px  1px 0 #000,
          1px  1px 0 #000;
-      line-height: 1;
     }
 
     #pause-indicator {
+      font-family: 'Knewave', cursive;
       font-size: 90px;
-      color: #ffcc00;
-      margin-right: 15px;
-      display: none;
+      color: #005fa3;
+      display: none;                 /* will be shown/hidden via JS */
       text-shadow:
         -1px -1px 0 #000,
          1px -1px 0 #000,
         -1px  1px 0 #000,
          1px  1px 0 #000;
+      margin-right: 10px;            /* small spacing to the clock */
+    }
+
+    /* Only the "Paused" text is absolutely positioned and can be moved */
+    #paused-label {
+      position: absolute;
+      left: 10px;                   /* adjust position as desired */
+      top: -5px;                    /* adjust position as desired */
+      display: none;                 /* will be shown/hidden via JS */
+      font-family: 'Knewave', cursive;
+      font-size: 28px;
+      color: #ffcc00;
+      text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000;
+      pointer-events: none;          /* does not intercept clicks */
+      z-index: 2;
     }
 
     #timer .hm {
@@ -52,30 +73,33 @@
       font-size: 40px;
       position: relative;
       top: -40px;
-      left: -10px;
+      left: 0px;
       margin-left: 8px;
       min-width: 55px;
       text-align: left;
-      line-height: 1;
     }
   </style>
 </head>
 <body>
   <div id="wrapper">
     <div id="timer">
-      <span id="pause-indicator">⏸</span>
+      <span id="pause-indicator">||</span>   <!-- stays in the flow as before -->
       <span class="hm">00:00</span>
       <span class="seconds">00</span>
     </div>
+
+    <!-- separate, absolutely positioned -->
+    <div id="paused-label">Paused</div>
   </div>
 
   <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
   <script>
-    const BASE = "http://localhost:5000";
+    const BASE = "http://subathon.smtxlost.tv:5000";
     const socket = io(BASE);
     const hmSpan = document.querySelector("#timer .hm");
     const secSpan = document.querySelector("#timer .seconds");
     const pauseIcon = document.getElementById("pause-indicator");
+    const pausedLabel = document.getElementById("paused-label");
 
     function formatTime(seconds) {
       let h = Math.floor(seconds / 3600);
@@ -91,7 +115,10 @@
       const t = formatTime(data.remaining);
       hmSpan.textContent = t.hm;
       secSpan.textContent = t.s;
-      pauseIcon.style.display = data.paused ? "inline-block" : "none";
+
+      const show = !!data.paused;
+      pauseIcon.style.display = show ? "inline-block" : "none";  // Symbol as before
+      pausedLabel.style.display = show ? "block" : "none";       // Absolute text
     }
 
     socket.on("timer_update", updateTimer);
