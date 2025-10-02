@@ -9,6 +9,7 @@ from flask_socketio import SocketIO
 from dotenv import load_dotenv
 import time
 import datetime
+import re
 
 # --------------------
 # Helper function for timestamp
@@ -230,6 +231,59 @@ def start_client(name, token, config):
     threading.Thread(target=run_ws, daemon=True).start()
 
 # --------------------
+# Kick Chat Listener (for Kick Gifts via Chat)
+# --------------------
+def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
+    if not app_key or not cluster or not chatroom_id:
+        print(f"[{ts()}] [INFO] KickChat for {name} skipped (missing ENV)")
+        return
+
+    url = f"wss://ws-{cluster}.pusher.com/app/{app_key}?protocol=7"
+
+    def on_open(ws):
+        print(f"[{ts()}] [{name}] KickChat connected")
+        ws.send(json.dumps({
+            "event": "pusher:subscribe",
+            "data": {"channel": f"chatrooms.{chatroom_id}.v2"}
+        }))
+
+    def on_message(ws, message):
+        try:
+            payload = json.loads(message)
+            if payload.get("event") == "App\\Events\\ChatMessageEvent":
+                inner = json.loads(payload["data"])  # FIX: data erst in Dict wandeln
+                text = inner.get("content", "")
+                user = inner.get("sender", {}).get("username")
+                # RAW Log für KickChat
+                print(f"[{ts()}] [{name}] RAW CHAT EVENT: {json.dumps(inner, indent=2)}")
+                log_event(name, inner)
+                # Kick Gift erkennen
+                m = re.search(r"gifted\s+(\d+)\s+KICK", text, re.IGNORECASE)
+                if m:
+                    amount = int(m.group(1))
+                    fake_event = {"type": "kick_gift", "amount": amount}
+                    handle_event(name, fake_event, config)
+        except Exception as e:
+            print(f"[{ts()}] [{name}] KickChat parse error:", e)
+
+    def on_close(ws, *a):
+        print(f"[{ts()}] [{name}] KickChat closed, reconnect in 5s")
+        time.sleep(5)
+        connect_kick_chat(name, app_key, cluster, chatroom_id, config)
+
+    def on_error(ws, error):
+        print(f"[{ts()}] [{name}] KickChat error:", error)
+
+    ws = websocket.WebSocketApp(
+        url,
+        on_open=on_open,
+        on_message=on_message,
+        on_close=on_close,
+        on_error=on_error
+    )
+    threading.Thread(target=ws.run_forever, daemon=True).start()
+
+# --------------------
 # Flask routes
 # --------------------
 @app.route("/")
@@ -335,12 +389,15 @@ if __name__ == "__main__":
         start_client("SE-Twitch1", SE_TWITCH_TOKEN, CONFIG1)
     if SE_KICK_TOKEN:
         start_client("SE-Kick1", SE_KICK_TOKEN, CONFIG1)
+    connect_kick_chat("KickChat1", KICK_APP_KEY, KICK_CLUSTER, KICK_CHATROOM_ID, CONFIG1)
 
     # Streamer 2
     if SE2_TWITCH_TOKEN and CONFIG2:
         start_client("SE-Twitch2", SE2_TWITCH_TOKEN, CONFIG2)
     if SE2_KICK_TOKEN and CONFIG2:
         start_client("SE-Kick2", SE2_KICK_TOKEN, CONFIG2)
+    if CONFIG2:
+        connect_kick_chat("KickChat2", KICK_APP_KEY2, KICK_CLUSTER2, KICK_CHATROOM_ID2, CONFIG2)
 
     print(f"[{ts()}] [APP] Subathon timer running at http://localhost:5000")
     socketio.run(app, host="0.0.0.0", port=5000)
