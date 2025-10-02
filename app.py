@@ -11,6 +11,12 @@ import time
 import datetime
 
 # --------------------
+# Hilfsfunktion für Timestamp
+# --------------------
+def ts():
+    return datetime.datetime.now().strftime("%d.%m.%Y - %H:%M")
+
+# --------------------
 # ENV Variablen laden
 # --------------------
 load_dotenv()
@@ -27,13 +33,6 @@ KICK_APP_KEY     = os.getenv("KICK_APP_KEY")
 KICK_CLUSTER     = os.getenv("KICK_CLUSTER")
 KICK_CHATROOM_ID = os.getenv("KICK_CHATROOM_ID")
 
-# print(f"[DEBUG] SE_TWITCH_TOKEN:  {bool(SE_TWITCH_TOKEN)}")
-# print(f"[DEBUG] SE_KICK_TOKEN:    {bool(SE_KICK_TOKEN)}")
-# print(f"[DEBUG] SE2_TWITCH_TOKEN: {bool(SE2_TWITCH_TOKEN)}")
-# print(f"[DEBUG] KICK_APP_KEY:     {KICK_APP_KEY}")
-# print(f"[DEBUG] KICK_CLUSTER:     {KICK_CLUSTER}")
-# print(f"[DEBUG] KICK_CHATROOM_ID: {KICK_CHATROOM_ID}")
-
 # --------------------
 # Config laden
 # --------------------
@@ -46,7 +45,7 @@ if SE2_TWITCH_TOKEN:  # nur laden wenn zweiter Token vorhanden
         with open("config2.json", "r", encoding="utf-8") as f:
             CONFIG2 = json.load(f)
     except FileNotFoundError:
-        print("[WARN] SE2_TWITCH_TOKEN ist gesetzt, aber config2.json fehlt!")
+        print(f"[{ts()}] [WARN] SE2_TWITCH_TOKEN ist gesetzt, aber config2.json fehlt!")
 
 # --------------------
 # Flask + SocketIO Setup
@@ -70,7 +69,7 @@ def save_state():
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump({"remaining": remaining, "paused": paused}, f)
     except Exception as e:
-        print("[STATE] Fehler beim Speichern:", e)
+        print(f"[{ts()}] [STATE] Fehler beim Speichern:", e)
 
 def load_state():
     global remaining, paused
@@ -80,18 +79,18 @@ def load_state():
                 state = json.load(f)
                 remaining = state.get("remaining", remaining)
                 paused = state.get("paused", paused)
-                print(f"[STATE] Wiederhergestellt: {remaining//60} Minuten, paused={paused}")
+                print(f"[{ts()}] [STATE] Wiederhergestellt: {remaining//60} Minuten, paused={paused}")
         except Exception as e:
-            print("[STATE] Fehler beim Laden:", e)
+            print(f"[{ts()}] [STATE] Fehler beim Laden:", e)
 
 def log_event(platform, data):
     """Schreibt alle RAW Events zusätzlich in ein Logfile"""
     try:
-        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ts_str = ts()
         with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] [{platform}] RAW EVENT: {json.dumps(data, ensure_ascii=False)}\n")
+            f.write(f"[{ts_str}] [{platform}] RAW EVENT: {json.dumps(data, ensure_ascii=False)}\n")
     except Exception as e:
-        print("[LOG] Fehler beim Schreiben in events.log:", e)
+        print(f"[{ts()}] [LOG] Fehler beim Schreiben in events.log:", e)
 
 # beim Start vorhandenen State laden
 load_state()
@@ -116,7 +115,7 @@ def handle_event(platform, data, config):
     minutes_to_add = 0
 
     # RAW Event ins Logfile + Konsole
-    print(f"[{platform}] RAW EVENT: {json.dumps(data, indent=2)}")
+    print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2)}")
     log_event(platform, data)
 
     # Twitch Subs (inkl. Prime & Multi-Month via amount)
@@ -177,7 +176,7 @@ def handle_event(platform, data, config):
             remaining += minutes_to_add * 60
             save_state()
             new_state = {"remaining": remaining, "paused": paused}
-        print(f"[{platform}] +{minutes_to_add} Minuten → {remaining//60} min gesamt")
+        print(f"[{ts()}] [{platform}] +{minutes_to_add} Minuten → {remaining//60} min gesamt")
         socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
 # --------------------
@@ -188,7 +187,7 @@ def start_client(name, token, config):
 
     def run_ws():
         def on_open(ws):
-            print(f"[{name}] Verbunden")
+            print(f"[{ts()}] [{name}] Verbunden")
 
         def on_message(ws, message):
             msg = json.loads(message)
@@ -199,10 +198,10 @@ def start_client(name, token, config):
                 handle_event(name, data, config)
 
         def on_error(ws, error):
-            print(f"[{name}] Fehler: {error}")
+            print(f"[{ts()}] [{name}] Fehler: {error}")
 
         def on_close(ws, close_status_code, close_msg):
-            print(f"[{name}] Verbindung geschlossen, Reconnect in 1s")
+            print(f"[{ts()}] [{name}] Verbindung geschlossen, Reconnect in 1s")
             time.sleep(1)
             run_ws()
 
@@ -213,7 +212,7 @@ def start_client(name, token, config):
                 "data": {"topic": topic, "token": token, "token_type": "jwt"},
             }
             ws.send(json.dumps(sub))
-            print(f"[{name}] subscribed zu {topic}")
+            print(f"[{ts()}] [{name}] Subscribed zu {topic}")
 
         ws = websocket.WebSocketApp(
             url,
@@ -317,7 +316,7 @@ def change_time():
         new_state = {"remaining": remaining, "paused": paused}
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
-    print(f"[MANUAL] {delta:+} Minuten → {remaining//60} min gesamt")
+    print(f"[{ts()}] [MANUAL] {delta:+} Minuten → {remaining//60} min gesamt")
 
     return jsonify(new_state)
 
@@ -334,5 +333,5 @@ if __name__ == "__main__":
     if SE_KICK_TOKEN:
         start_client("SE-Kick", SE_KICK_TOKEN, CONFIG1)
 
-    print("[APP] Subathon Timer läuft auf http://localhost:5000")
+    print(f"[{ts()}] [APP] Subathon Timer läuft auf http://localhost:5000")
     socketio.run(app, host="0.0.0.0", port=5000)
