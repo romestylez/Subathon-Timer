@@ -3,6 +3,7 @@ import json
 import uuid
 import threading
 import websocket
+import socketio as socketio_client
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
@@ -155,7 +156,7 @@ def handle_event(platform, data, config):
         elif tier_raw == "3000":
             minutes_to_add = gift_amount * config["twitch"]["sub_t3"]
 
-    # Donations via Tipeee
+    # Donations via Tipeee (only donation type is used)
     elif data.get("type") == "donation" and "tipeee" in config:
         amount = float(data.get("amount", 0))
         minutes_to_add = int(amount * config["tipeee"]["minutes_per_eur"])
@@ -165,15 +166,16 @@ def handle_event(platform, data, config):
         amount = float(data.get("data", {}).get("amount", 0))
         minutes_to_add = int(amount * config["streamelements"]["minutes_per_eur"])
 
-    # Kick subs
+    # Kick subs (via SE)
     elif data.get("type") == "subscriber" and "kick" in platform.lower():
         if "kick" in config:
             minutes_to_add = config["kick"]["sub"]
 
-    # Kick gifts
+    # Kick gifts (via Kick Chat)
     elif data.get("type") == "kick_gift":
         if "kick" in config:
             amount = int(data.get("amount", 0))
+            # Only full 100 KICK blocks count (minimum threshold)
             minutes_to_add = (amount // 100) * config["kick"]["kicks_per_100"]
 
     if minutes_to_add > 0:
@@ -251,13 +253,12 @@ def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
         try:
             payload = json.loads(message)
             if payload.get("event") == "App\\Events\\ChatMessageEvent":
-                inner = json.loads(payload["data"])  # FIX: data erst in Dict wandeln
+                inner = json.loads(payload["data"])  # data is a JSON string
                 text = inner.get("content", "")
-                user = inner.get("sender", {}).get("username")
-                # RAW Log für KickChat
+                # RAW Log for KickChat
                 print(f"[{ts()}] [{name}] RAW CHAT EVENT: {json.dumps(inner, indent=2)}")
                 log_event(name, inner)
-                # Kick Gift erkennen
+                # Detect Kick Gift amounts
                 m = re.search(r"gifted\s+(\d+)\s+KICK", text, re.IGNORECASE)
                 if m:
                     amount = int(m.group(1))
@@ -282,6 +283,57 @@ def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
         on_error=on_error
     )
     threading.Thread(target=ws.run_forever, daemon=True).start()
+
+# --------------------
+# TipeeeStream (donations only)
+# --------------------
+def start_tipeee(name, api_key, config):
+    """
+    Connects to TipeeeStream Socket.IO and forwards only 'donation' events
+    into handle_event as {'type': 'donation', 'amount': <float>}.
+    """
+    if not api_key:
+        print(f"[{ts()}] [INFO] {name} skipped (no TIPEEE_API_KEY)")
+        return
+
+    sio = socketio_client.Client(reconnection=True)
+
+    @sio.event
+    def connect():
+        print(f"[{ts()}] [{name}] Connected to Tipeee → listening for donations")
+
+    @sio.event
+    def disconnect():
+        print(f"[{ts()}] [{name}] Disconnected from Tipeee")
+
+    @sio.on("new-event")
+    def on_new_event(data):
+        try:
+            ev = data.get("event", {})
+            if ev.get("type") == "donation":
+                params = ev.get("parameters", {}) if isinstance(ev.get("parameters", {}), dict) else {}
+                amount = float(params.get("amount", 0))
+                user = params.get("username", "Unknown")
+                # Raw log
+                print(f"[{ts()}] [{name}] RAW TIPEEE EVENT: {json.dumps(ev, indent=2)}")
+                log_event(name, ev)
+                # Forward to timer logic
+                fake = {"type": "donation", "amount": amount, "user": user}
+                handle_event(name, fake, config)
+        except Exception as e:
+            print(f"[{ts()}] [{name}] Tipeee parse error:", e)
+
+    def run():
+        url = f"https://sso.tipeeestream.com:443?access_token={api_key}"
+        try:
+            sio.connect(url, transports=["websocket", "polling"])
+            sio.wait()
+        except Exception as e:
+            print(f"[{ts()}] [{name}] Tipeee connection error:", e)
+            time.sleep(5)
+            run()
+
+    threading.Thread(target=run, daemon=True).start()
 
 # --------------------
 # Flask routes
@@ -384,12 +436,16 @@ def change_time():
 if __name__ == "__main__":
     socketio.start_background_task(timer_loop)
 
-    # Streamer 1
+    # Streamer 1 (SE: Twitch/Kick)
     if SE_TWITCH_TOKEN:
         start_client("SE-Twitch1", SE_TWITCH_TOKEN, CONFIG1)
     if SE_KICK_TOKEN:
         start_client("SE-Kick1", SE_KICK_TOKEN, CONFIG1)
+    # Kick Gifts via Kick Chat
     connect_kick_chat("KickChat1", KICK_APP_KEY, KICK_CLUSTER, KICK_CHATROOM_ID, CONFIG1)
+    # Tipeee donations
+    if TIPEEE_API_KEY:
+        start_tipeee("Tipeee1", TIPEEE_API_KEY, CONFIG1)
 
     # Streamer 2
     if SE2_TWITCH_TOKEN and CONFIG2:
@@ -398,6 +454,8 @@ if __name__ == "__main__":
         start_client("SE-Kick2", SE2_KICK_TOKEN, CONFIG2)
     if CONFIG2:
         connect_kick_chat("KickChat2", KICK_APP_KEY2, KICK_CLUSTER2, KICK_CHATROOM_ID2, CONFIG2)
+    if TIPEEE_API_KEY2 and CONFIG2:
+        start_tipeee("Tipeee2", TIPEEE_API_KEY2, CONFIG2)
 
     print(f"[{ts()}] [APP] Subathon timer running at http://localhost:5000")
     socketio.run(app, host="0.0.0.0", port=5000)
