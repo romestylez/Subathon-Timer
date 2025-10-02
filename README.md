@@ -8,12 +8,12 @@ It increases the remaining time based on subscriptions, bits, donations, or othe
 ## 🚀 Features
 
 - Integration with **Twitch Subs**, **Bits**, **Gifted Subs**  
-- Support for **Kick Subs & Kick KICKS**  
+- Support for **Kick Subs & Kick KICKS (via Kick Chat listener)**  
 - **Tipeee & StreamElements Donations**  
 - **Timer Web UI** (for stream overlay and control)  
 - **Persistent Timer State** (restores after restart)  
 - Control via API endpoints or web interface  
-- **NEW: Multi-Streamer Support** → 2 streamers with different configs, all events add to the same timer ✅  
+- **Multi-Streamer Support** → 2 streamers with different configs, all events add to the same timer ✅  
 
 ---
 
@@ -80,7 +80,8 @@ KICK_CHATROOM_ID2=654321
 TIPEEE_API_KEY2=your_tipeee_api_key_2
 ```
 
-👉 If `SE2_TWITCH_TOKEN` is empty, **Streamer 2 is skipped automatically**.
+👉 If `SE2_TWITCH_TOKEN` is empty, **Streamer 2 is skipped automatically**.  
+👉 Kick gifts require valid Kick Chat ENV vars (`KICK_APP_KEY`, `KICK_CLUSTER`, `KICK_CHATROOM_ID`).  
 
 ---
 
@@ -113,6 +114,11 @@ They follow the same structure, but you can set **different values per streamer*
   }
 }
 ```
+
+- Twitch subs, gifted subs, bits, donations → tracked via **StreamElements**  
+- Kick subs → tracked via **StreamElements Kick token**  
+- Kick gifts (KICKs) → tracked via **Kick Chat listener**  
+- Tipeee donations → tracked via **Tipeee API**  
 
 All events (from Streamer 1 & 2) will **add time to the same shared timer**.
 
@@ -164,5 +170,5 @@ All endpoints return JSON.
 
 ## 📝 Logging
 
-- **events.log** → All raw events (subs, bits, donations, …)  
+- **events.log** → All raw events (subs, bits, donations, Kick gifts, …)  
 - **state.json** → Saves timer state for restarts  
