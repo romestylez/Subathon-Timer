@@ -69,6 +69,7 @@ lock = threading.Lock()
 
 STATE_FILE = "state.json"
 LOG_FILE = "events.log"
+TIME_ADD_LOG = "time_add.log"
 
 def save_state():
     try:
@@ -98,6 +99,15 @@ def log_event(platform, data):
     except Exception as e:
         print(f"[{ts()}] [LOG] Error while writing to events.log:", e)
 
+def log_time_add(platform, minutes_to_add, remaining):
+    """Write only time addition summary to a separate logfile"""
+    try:
+        ts_str = ts()
+        with open(TIME_ADD_LOG, "a", encoding="utf-8") as f:
+            f.write(f"[{ts_str}] [{platform}] +{minutes_to_add} minutes → {remaining//60} min total\n")
+    except Exception as e:
+        print(f"[{ts()}] [LOG] Error while writing to time_add.log:", e)
+
 # Load existing state on startup
 load_state()
 
@@ -120,88 +130,139 @@ def timer_loop():
                 counter = 0
         socketio.sleep(1)
 
-
 # --------------------
 # Handle events
 # --------------------
+community_gift_groups = set()   # Gift-Bundle activityGroups
+pending_gifted_subs = {}        # ag -> {"platform":..., "tier":..., "ts":..., "config":...}
+
+def minutes_for_tier(cfg, tier_raw):
+    if tier_raw in ["1000", "prime"]:
+        return cfg["twitch"]["sub_t1"]
+    if tier_raw == "2000":
+        return cfg["twitch"]["sub_t2"]
+    if tier_raw == "3000":
+        return cfg["twitch"]["sub_t3"]
+    return cfg["twitch"]["sub_t1"]
+
+def check_pending_gift(activity_group):
+    """
+    Wird verzögert (10s) aufgerufen.
+    Wenn bis dahin KEIN communityGiftPurchase mit derselben activityGroup registriert wurde,
+    behandeln wir den gespeicherten gifted subscriber als Einzelgift.
+    """
+    info = pending_gifted_subs.pop(activity_group, None)
+    if not info:
+        return  # nichts offen (oder bereits als Bundle erkannt)
+
+    # Wenn die Group inzwischen als Bundle markiert wurde -> ignorieren
+    if activity_group in community_gift_groups:
+        return
+
+    platform = info["platform"]
+    tier_raw = info["tier"]
+    cfg = info["config"]
+    add_min = minutes_for_tier(cfg, tier_raw)
+
+    with lock:
+        global remaining
+        remaining += add_min * 60
+        save_state()
+        new_state = {"remaining": remaining, "paused": paused}
+    msg = f"[{ts()}] [{platform}] +{add_min} minutes → {remaining//60} min total"
+    print(msg)
+    log_time_add(platform, add_min, remaining)
+    socketio.start_background_task(socketio.emit, "timer_update", new_state)
+
 def handle_event(platform, data, config):
-    global remaining
+    global remaining, community_gift_groups, pending_gifted_subs
     minutes_to_add = 0
 
     # RAW event to logfile + console
     print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2)}")
     log_event(platform, data)
 
-    # Twitch/Kick subs via StreamElements (RESUB-FIX + GIFT-FIX)
-    if data.get("type") == "subscriber":
+    etype = data.get("type")
+
+    # Twitch/Kick subs via StreamElements
+    if etype == "subscriber":
         d = data.get("data", {})
         provider = str(data.get("provider", "")).lower()
         tier_raw = str(d.get("tier", "1000")).lower()
+        gifted = d.get("gifted", False)
+        ag = data.get("activityGroup")
 
-        # --- Kick subs via SE: feste Minuten aus config["kick"]["sub"]
-        # Erkennen über Provider oder Plattformnamen
+        # --- Kick subs ---
         if "kick" in provider or "kick" in platform.lower():
             if "kick" in config:
                 minutes_to_add = config["kick"]["sub"]
+
+        # --- Twitch subs ---
         else:
-            # --- Twitch subs/resubs: gifted-Flag ignorieren (wird bei communityGiftPurchase gezählt)
-            if d.get("gifted", False):
-                return  # gifted subscriber-event ignorieren, sonst doppelt
-
-            # amount ist die Laufzeit in Monaten (11, 48, …) -> niemals multiplizieren
-            # wir zählen jeden (re)sub nur 1x
-            if tier_raw in ["1000", "prime"]:
-                tier_minutes = config["twitch"]["sub_t1"]
-            elif tier_raw == "2000":
-                tier_minutes = config["twitch"]["sub_t2"]
-            elif tier_raw == "3000":
-                tier_minutes = config["twitch"]["sub_t3"]
+            if gifted:
+                # Falls SE eine activityGroup mitliefert, warten wir 10s ab,
+                # ob ein communityGiftPurchase mit derselben Group kommt.
+                if ag:
+                    pending_gifted_subs[ag] = {
+                        "platform": platform,
+                        "tier": tier_raw,
+                        "ts": time.time(),
+                        "config": config
+                    }
+                    threading.Timer(10.0, check_pending_gift, args=(ag,)).start()
+                    return
+                else:
+                    # selten, aber falls kein ag vorhanden -> sofort als Einzelgift zählen
+                    minutes_to_add = minutes_for_tier(config, tier_raw)
             else:
-                tier_minutes = config["twitch"]["sub_t1"]  # fallback
+                # normaler Sub / Resub
+                minutes_to_add = minutes_for_tier(config, tier_raw)
 
-            minutes_to_add = tier_minutes  # immer nur 1x
-
-    # Gifted subs (Bundle) – korrekt nach Anzahl
-    elif data.get("type") == "communityGiftPurchase":
+    # Gifted subs (Bundle)
+    elif etype == "communityGiftPurchase":
         d = data.get("data", {})
         gift_amount = int(d.get("amount", 1))
         tier_raw = str(d.get("tier", "1000")).lower()
+        ag = data.get("activityGroup")
 
-        if tier_raw in ["1000", "prime"]:
-            minutes_to_add = gift_amount * config["twitch"]["sub_t1"]
-        elif tier_raw == "2000":
-            minutes_to_add = gift_amount * config["twitch"]["sub_t2"]
-        elif tier_raw == "3000":
-            minutes_to_add = gift_amount * config["twitch"]["sub_t3"]
+        # Group als Bundle markieren
+        if ag:
+            community_gift_groups.add(ag)
+            # ggf. wartenden gifted-sub-Eintrag entfernen (falls bereits pending)
+            pending_gifted_subs.pop(ag, None)
+
+        minutes_to_add = gift_amount * minutes_for_tier(config, tier_raw)
 
     # Bits
-    elif data.get("type") == "cheer":
+    elif etype == "cheer":
         bits = int(data.get("data", {}).get("amount", 0))
         minutes_to_add = (bits // 100) * config["twitch"]["bits_per_100"]
 
-    # Donations via Tipeee (only donation type is used)
-    elif data.get("type") == "donation" and "tipeee" in config:
+    # Donations via Tipeee
+    elif etype == "donation" and "tipeee" in config:
         amount = float(data.get("amount", 0))
         minutes_to_add = int(amount * config["tipeee"]["minutes_per_eur"])
 
     # Donations via StreamElements
-    elif data.get("type") == "tip" and "streamelements" in config:
+    elif etype == "tip" and "streamelements" in config:
         amount = float(data.get("data", {}).get("amount", 0))
         minutes_to_add = int(amount * config["streamelements"]["minutes_per_eur"])
 
-    # Kick gifts (via Kick Chat)
-    elif data.get("type") == "kick_gift":
+    # Kick gifts via Chat
+    elif etype == "kick_gift":
         if "kick" in config:
             amount = int(data.get("amount", 0))
-            # Only full 100 KICK blocks count (minimum threshold)
             minutes_to_add = (amount // 100) * config["kick"]["kicks_per_100"]
 
+    # --- Anwenden der Zeitgutschrift ---
     if minutes_to_add > 0:
         with lock:
             remaining += minutes_to_add * 60
             save_state()
             new_state = {"remaining": remaining, "paused": paused}
-        print(f"[{ts()}] [{platform}] +{minutes_to_add} minutes → {remaining//60} min total")
+        msg = f"[{ts()}] [{platform}] +{minutes_to_add} minutes → {remaining//60} min total"
+        print(msg)
+        log_time_add(platform, minutes_to_add, remaining)
         socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
 # --------------------
@@ -271,12 +332,10 @@ def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
         try:
             payload = json.loads(message)
             if payload.get("event") == "App\\Events\\ChatMessageEvent":
-                inner = json.loads(payload["data"])  # data is a JSON string
+                inner = json.loads(payload["data"])
                 text = inner.get("content", "")
-                # RAW Log for KickChat
                 print(f"[{ts()}] [{name}] RAW CHAT EVENT: {json.dumps(inner, indent=2)}")
                 log_event(name, inner)
-                # Detect Kick Gift amounts
                 m = re.search(r"gifted\s+(\d+)\s+KICK", text, re.IGNORECASE)
                 if m:
                     amount = int(m.group(1))
@@ -306,10 +365,6 @@ def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
 # TipeeeStream (donations only)
 # --------------------
 def start_tipeee(name, api_key, config):
-    """
-    Connects to TipeeeStream Socket.IO and forwards only 'donation' events
-    into handle_event as {'type': 'donation', 'amount': <float>}.
-    """
     if not api_key:
         print(f"[{ts()}] [INFO] {name} skipped (no TIPEEE_API_KEY)")
         return
@@ -332,10 +387,8 @@ def start_tipeee(name, api_key, config):
                 params = ev.get("parameters", {}) if isinstance(ev.get("parameters", {}), dict) else {}
                 amount = float(params.get("amount", 0))
                 user = params.get("username", "Unknown")
-                # Raw log
                 print(f"[{ts()}] [{name}] RAW TIPEEE EVENT: {json.dumps(ev, indent=2)}")
                 log_event(name, ev)
-                # Forward to timer logic
                 fake = {"type": "donation", "amount": amount, "user": user}
                 handle_event(name, fake, config)
         except Exception as e:
@@ -448,20 +501,40 @@ def change_time():
 
     return jsonify(new_state)
 
+@app.route("/log")
+def get_log():
+    try:
+        if not os.path.exists(LOG_FILE):
+            return jsonify({"lines": ["(keine Logdatei vorhanden)\n"]})
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()[-100:]
+        return jsonify({"lines": lines})
+    except Exception as e:
+        return jsonify({"lines": [f"Fehler beim Lesen von {LOG_FILE}: {e}\n"]})
+
+@app.route("/time_log")
+def get_time_log():
+    try:
+        if not os.path.exists(TIME_ADD_LOG):
+            return jsonify({"lines": ["(noch keine Zeitgutschriften)\n"]})
+        with open(TIME_ADD_LOG, "r", encoding="utf-8") as f:
+            lines = f.readlines()[-100:]
+        return jsonify({"lines": lines})
+    except Exception as e:
+        return jsonify({"lines": [f"Fehler beim Lesen von {TIME_ADD_LOG}: {e}\n"]})
+
 # --------------------
 # Main start
 # --------------------
 if __name__ == "__main__":
     socketio.start_background_task(timer_loop)
 
-    # Streamer 1 (SE: Twitch/Kick)
+    # Streamer 1
     if SE_TWITCH_TOKEN:
         start_client("SE-Twitch1", SE_TWITCH_TOKEN, CONFIG1)
     if SE_KICK_TOKEN:
         start_client("SE-Kick1", SE_KICK_TOKEN, CONFIG1)
-    # Kick Gifts via Kick Chat
     connect_kick_chat("KickChat1", KICK_APP_KEY, KICK_CLUSTER, KICK_CHATROOM_ID, CONFIG1)
-    # Tipeee donations
     if TIPEEE_API_KEY:
         start_tipeee("Tipeee1", TIPEEE_API_KEY, CONFIG1)
 
