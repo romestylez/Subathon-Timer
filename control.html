@@ -35,6 +35,16 @@
       font-weight: bold;
       color: #00ccff;
     }
+    pre#logbox {
+      text-align: left;
+      background: #111;
+      color: #0f0;
+      padding: 10px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 30px;
+      border: 1px solid #333;
+    }
   </style>
 </head>
 <body>
@@ -54,6 +64,9 @@
     <button class="time-btn" onclick="send('/time?minusdelta=5')">-5 Min</button>
     <button class="time-btn" onclick="send('/time?minusdelta=10')">-10 Min</button>
   </div>
+
+  <h2>Recent Events</h2>
+  <pre id="logbox">(Keine Einträge...)</pre>
 
   <script>
     const BASE = "http://localhost:5000";
@@ -84,12 +97,23 @@
         });
     }
 
-    // Auto-Update jede Sekunde
-    setInterval(() => {
-      fetch(BASE + "/state")
+    function loadLog() {
+      fetch(BASE + "/time_log")
         .then(r => r.json())
-        .then(updateState);
+        .then(data => {
+          const box = document.getElementById("logbox");
+          box.textContent = data.lines.join("");
+          box.scrollTop = box.scrollHeight; // immer unten bleiben
+        });
+    }
+
+    // Auto updates
+    setInterval(() => {
+      fetch(BASE + "/state").then(r => r.json()).then(updateState);
     }, 1000);
+
+    setInterval(loadLog, 5000);
+    loadLog();
   </script>
 </body>
 </html>
