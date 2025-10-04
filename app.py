@@ -104,7 +104,7 @@ def log_time_add(platform, minutes_to_add, remaining):
     try:
         ts_str = ts()
         with open(TIME_ADD_LOG, "a", encoding="utf-8") as f:
-            f.write(f"[{ts_str}] [{platform}] +{minutes_to_add} minutes → {remaining//60} min total\n")
+            f.write(f"[{ts_str}] [{platform}] +{minutes_to_add} minutes\n")
     except Exception as e:
         print(f"[{ts()}] [LOG] Error while writing to time_add.log:", e)
 
@@ -169,7 +169,7 @@ def check_pending_gift(activity_group):
         remaining += add_min * 60
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
-    msg = f"[{ts()}] [{platform}] +{add_min} minutes → {remaining//60} min total"
+    msg = f"[{ts()}] [{platform}] +{minutes_to_add} minutes"
     print(msg)
     log_time_add(platform, add_min, remaining)
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
