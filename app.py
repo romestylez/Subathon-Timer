@@ -254,7 +254,7 @@ def handle_event(platform, data, config):
             amount = int(data.get("amount", 0))
             minutes_to_add = (amount // 100) * config["kick"]["kicks_per_100"]
 
-    # --- Anwenden der Zeitgutschrift ---
+    # --- Apply time addition ---
     if minutes_to_add > 0:
         with lock:
             remaining += minutes_to_add * 60
@@ -516,7 +516,7 @@ def get_log():
 def get_time_log():
     try:
         if not os.path.exists(TIME_ADD_LOG):
-            return jsonify({"lines": ["(noch keine Zeitgutschriften)\n"]})
+            return jsonify({"lines": ["(no time additions yet)\n"]})
         with open(TIME_ADD_LOG, "r", encoding="utf-8") as f:
             lines = f.readlines()[-100:]
         return jsonify({"lines": lines})
