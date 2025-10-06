@@ -82,11 +82,11 @@
       );
     }
 
-    function updateState(data) {
-      document.getElementById("timer").innerText = formatTime(data.remaining);
-      document.getElementById("status").innerText =
-        `Remaining: ${Math.floor(data.remaining/60)} min | Paused: ${data.paused}`;
-    }
+  function updateState(data) {
+    document.getElementById("timer").innerText = formatTime(data.remaining);
+    document.getElementById("status").innerText =
+      `Status: ${data.paused ? "Paused" : "Running"}`;
+  }
 
     function send(path) {
       fetch(BASE + path)
