@@ -23,6 +23,9 @@ def ts():
 # --------------------
 load_dotenv()
 
+# Debug setting (show/hide RAW events)
+DEBUG_EVENTS = os.getenv("DEBUG", "1") == "1"
+
 # Streamer 1
 SE_TWITCH_TOKEN  = os.getenv("SE_TWITCH_TOKEN")
 SE_KICK_TOKEN    = os.getenv("SE_KICK_TOKEN")
@@ -169,7 +172,7 @@ def check_pending_gift(activity_group):
         remaining += add_min * 60
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
-    msg = f"[{ts()}] [{platform}] +{minutes_to_add} minutes"
+    msg = f"[{ts()}] [{platform}] +{add_min} minutes"
     print(msg)
     log_time_add(platform, add_min, remaining)
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
@@ -178,8 +181,9 @@ def handle_event(platform, data, config):
     global remaining, community_gift_groups, pending_gifted_subs
     minutes_to_add = 0
 
-    # RAW event to logfile + console
-    print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2)}")
+    # RAW event to logfile + optional console
+    if DEBUG_EVENTS:
+        print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2)}")
     log_event(platform, data)
 
     etype = data.get("type")
@@ -256,14 +260,43 @@ def handle_event(platform, data, config):
 
     # --- Apply time addition ---
     if minutes_to_add > 0:
+        # passendes Label bestimmen
+        label = ""
+        if etype == "subscriber":
+            if gifted:
+                label = "Gifted Sub"
+            else:
+                if tier_raw == "1000" or tier_raw == "prime":
+                    label = "T1 Sub"
+                elif tier_raw == "2000":
+                    label = "T2 Sub"
+                elif tier_raw == "3000":
+                    label = "T3 Sub"
+                else:
+                    label = "Sub"
+        elif etype == "communityGiftPurchase":
+            label = f"Gift Bundle ({gift_amount} Subs)"
+        elif etype == "cheer":
+            label = f"Bits ({bits})"
+        elif etype == "donation":
+            label = f"Donation ({amount:.2f} €)"
+        elif etype == "tip":
+            label = f"Tip ({amount:.2f} €)"
+        elif etype == "kick_gift":
+            label = f"Kick Gift ({amount})"
+        else:
+            label = etype.capitalize()
+
         with lock:
             remaining += minutes_to_add * 60
             save_state()
             new_state = {"remaining": remaining, "paused": paused}
-        msg = f"[{ts()}] [{platform}] +{minutes_to_add} minutes → {remaining//60} min total"
+
+        msg = f"[{ts()}] [{platform}] {label} | +{minutes_to_add} minutes"
         print(msg)
         log_time_add(platform, minutes_to_add, remaining)
         socketio.start_background_task(socketio.emit, "timer_update", new_state)
+
 
 # --------------------
 # StreamElements WS with auto-reconnect
@@ -334,7 +367,8 @@ def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
             if payload.get("event") == "App\\Events\\ChatMessageEvent":
                 inner = json.loads(payload["data"])
                 text = inner.get("content", "")
-                print(f"[{ts()}] [{name}] RAW CHAT EVENT: {json.dumps(inner, indent=2)}")
+                if DEBUG_EVENTS:
+                    print(f"[{ts()}] [{name}] RAW CHAT EVENT: {json.dumps(inner, indent=2)}")
                 log_event(name, inner)
                 m = re.search(r"gifted\s+(\d+)\s+KICK", text, re.IGNORECASE)
                 if m:
@@ -387,7 +421,8 @@ def start_tipeee(name, api_key, config):
                 params = ev.get("parameters", {}) if isinstance(ev.get("parameters", {}), dict) else {}
                 amount = float(params.get("amount", 0))
                 user = params.get("username", "Unknown")
-                print(f"[{ts()}] [{name}] RAW TIPEEE EVENT: {json.dumps(ev, indent=2)}")
+                if DEBUG_EVENTS:
+                    print(f"[{ts()}] [{name}] RAW TIPEEE EVENT: {json.dumps(ev, indent=2)}")
                 log_event(name, ev)
                 fake = {"type": "donation", "amount": amount, "user": user}
                 handle_event(name, fake, config)
@@ -518,7 +553,7 @@ def get_time_log():
         if not os.path.exists(TIME_ADD_LOG):
             return jsonify({"lines": ["(no time additions yet)\n"]})
         with open(TIME_ADD_LOG, "r", encoding="utf-8") as f:
-            lines = f.readlines()[-100:]
+            lines = f.readlines()[-10:]
         return jsonify({"lines": lines})
     except Exception as e:
         return jsonify({"lines": [f"Fehler beim Lesen von {TIME_ADD_LOG}: {e}\n"]})
