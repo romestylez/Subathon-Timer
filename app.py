@@ -27,6 +27,7 @@ load_dotenv()
 DEBUG_EVENTS = os.getenv("DEBUG", "1") == "1"
 
 # Streamer 1
+LABEL_STREAMER1 = os.getenv("LABEL_STREAMER1", "Streamer1")
 SE_TWITCH_TOKEN  = os.getenv("SE_TWITCH_TOKEN")
 SE_KICK_TOKEN    = os.getenv("SE_KICK_TOKEN")
 KICK_APP_KEY     = os.getenv("KICK_APP_KEY")
@@ -35,6 +36,7 @@ KICK_CHATROOM_ID = os.getenv("KICK_CHATROOM_ID")
 TIPEEE_API_KEY   = os.getenv("TIPEEE_API_KEY")
 
 # Streamer 2
+LABEL_STREAMER2 = os.getenv("LABEL_STREAMER2", "Streamer2")
 SE2_TWITCH_TOKEN  = os.getenv("SE2_TWITCH_TOKEN")
 SE2_KICK_TOKEN    = os.getenv("SE2_KICK_TOKEN")
 KICK_APP_KEY2     = os.getenv("KICK_APP_KEY2")
@@ -102,14 +104,19 @@ def log_event(platform, data):
     except Exception as e:
         print(f"[{ts()}] [LOG] Error while writing to events.log:", e)
 
-def log_time_add(platform, minutes_to_add, remaining):
-    """Write only time addition summary to a separate logfile"""
+def log_time_add(platform, minutes_to_add, remaining, label=None):
+    """Write time addition summary (same as console) to a separate logfile"""
     try:
         ts_str = ts()
+        if label:
+            line = f"[{ts_str}] [{platform}] {label} | +{minutes_to_add} minutes\n"
+        else:
+            line = f"[{ts_str}] [{platform}] +{minutes_to_add} minutes\n"
         with open(TIME_ADD_LOG, "a", encoding="utf-8") as f:
-            f.write(f"[{ts_str}] [{platform}] +{minutes_to_add} minutes\n")
+            f.write(line)
     except Exception as e:
         print(f"[{ts()}] [LOG] Error while writing to time_add.log:", e)
+
 
 # Load existing state on startup
 load_state()
@@ -172,9 +179,10 @@ def check_pending_gift(activity_group):
         remaining += add_min * 60
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
-    msg = f"[{ts()}] [{platform}] +{add_min} minutes"
+    label = "Gifted Sub"
+    msg = f"[{ts()}] [{platform}] {label} | +{add_min} minutes"
     print(msg)
-    log_time_add(platform, add_min, remaining)
+    log_time_add(platform, add_min, remaining, label)
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
 def handle_event(platform, data, config):
@@ -294,7 +302,7 @@ def handle_event(platform, data, config):
 
         msg = f"[{ts()}] [{platform}] {label} | +{minutes_to_add} minutes"
         print(msg)
-        log_time_add(platform, minutes_to_add, remaining)
+        log_time_add(platform, minutes_to_add, remaining, label)
         socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
 
@@ -566,22 +574,25 @@ if __name__ == "__main__":
 
     # Streamer 1
     if SE_TWITCH_TOKEN:
-        start_client("SE-Twitch1", SE_TWITCH_TOKEN, CONFIG1)
+        start_client(f"{LABEL_STREAMER1}-Twitch", SE_TWITCH_TOKEN, CONFIG1)
     if SE_KICK_TOKEN:
-        start_client("SE-Kick1", SE_KICK_TOKEN, CONFIG1)
-    connect_kick_chat("KickChat1", KICK_APP_KEY, KICK_CLUSTER, KICK_CHATROOM_ID, CONFIG1)
+        start_client(f"{LABEL_STREAMER1}-Kick", SE_KICK_TOKEN, CONFIG1)
+    connect_kick_chat(f"{LABEL_STREAMER1}-KickChat", KICK_APP_KEY, KICK_CLUSTER, KICK_CHATROOM_ID, CONFIG1)
     if TIPEEE_API_KEY:
-        start_tipeee("Tipeee1", TIPEEE_API_KEY, CONFIG1)
+        start_tipeee(f"{LABEL_STREAMER1}-Tipeee", TIPEEE_API_KEY, CONFIG1)
+
 
     # Streamer 2
     if SE2_TWITCH_TOKEN and CONFIG2:
-        start_client("SE-Twitch2", SE2_TWITCH_TOKEN, CONFIG2)
+        start_client(f"{LABEL_STREAMER2}-Twitch", SE2_TWITCH_TOKEN, CONFIG2)
     if SE2_KICK_TOKEN and CONFIG2:
-        start_client("SE-Kick2", SE2_KICK_TOKEN, CONFIG2)
+        start_client(f"{LABEL_STREAMER2}-Kick", SE2_KICK_TOKEN, CONFIG2)
     if CONFIG2:
-        connect_kick_chat("KickChat2", KICK_APP_KEY2, KICK_CLUSTER2, KICK_CHATROOM_ID2, CONFIG2)
+        connect_kick_chat(f"{LABEL_STREAMER2}-KickChat", KICK_APP_KEY2, KICK_CLUSTER2, KICK_CHATROOM_ID2, CONFIG2)
     if TIPEEE_API_KEY2 and CONFIG2:
-        start_tipeee("Tipeee2", TIPEEE_API_KEY2, CONFIG2)
+        start_tipeee(f"{LABEL_STREAMER2}-Tipeee", TIPEEE_API_KEY2, CONFIG2)
+
+
 
     print(f"[{ts()}] [APP] Subathon timer running at http://localhost:5000")
     socketio.run(app, host="0.0.0.0", port=5000)
