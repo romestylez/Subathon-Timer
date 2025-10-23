@@ -12,6 +12,7 @@ import time
 import datetime
 import re
 
+
 # --------------------
 # Helper function for timestamp
 # --------------------
@@ -415,7 +416,8 @@ def start_tipeee(name, api_key, config):
 
     @sio.event
     def connect():
-        print(f"[{ts()}] [{name}] Connected to Tipeee → listening for donations")
+        print(f"[{ts()}] [{name}] Connected to Tipeee -> listening for donations")
+
 
     @sio.event
     def disconnect():
@@ -540,7 +542,7 @@ def change_time():
         new_state = {"remaining": remaining, "paused": paused}
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
-    print(f"[{ts()}] [MANUAL] {delta:+} minutes → {remaining//60} min total")
+    print(f"[{ts()}] [MANUAL] {delta:+} minutes -> {remaining//60} min total")
 
     return jsonify(new_state)
 

@@ -2,9 +2,16 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <title>Subathon Timer</title>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Knewave&display=swap" rel="stylesheet">
 
   <style>
+    @font-face {
+      font-family: 'BOZART';
+      src: url('fonts/BOZART.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+    }
 
     body { 
       background: transparent; 
@@ -13,13 +20,13 @@
     }
 
     #wrapper {
-      position: relative;            /* Reference for the absolutely positioned "Paused" text */
+      position: relative;            /* Referenz für den absolut positionierten "Paused"-Text */
       display: inline-block;
       text-align: left;
     }
 
     #timer {
-      font-family: 'Bebas Neue', sans-serif;
+      font-family: 'BOZART', sans-serif;
       font-size: 120px;
       color: #005fa3;
       font-weight: bold;
@@ -38,21 +45,21 @@
       font-family: 'Knewave', cursive;
       font-size: 90px;
       color: #005fa3;
-      display: none;                 /* will be shown/hidden via JS */
+      display: none;                 /* wird per JS ein-/ausgeblendet */
       text-shadow:
         -1px -1px 0 #000,
          1px -1px 0 #000,
         -1px  1px 0 #000,
          1px  1px 0 #000;
-      margin-right: 10px;            /* small spacing to the clock */
+      margin-right: 10px;            /* kleiner Abstand zur Uhrzeit */
     }
 
-    /* Only the "Paused" text is absolutely positioned and can be moved */
+    /* Nur der "Paused"-Text ist absolut positioniert und verschiebbar */
     #paused-label {
       position: absolute;
-      left: 10px;                   /* adjust position as desired */
-      top: -5px;                    /* adjust position as desired */
-      display: none;                 /* will be shown/hidden via JS */
+      left: 10px;                   /* Position nach Wunsch anpassen */
+      top: -5px;                     /* Position nach Wunsch anpassen */
+      display: none;                 /* wird per JS ein-/ausgeblendet */
       font-family: 'Knewave', cursive;
       font-size: 28px;
       color: #ffcc00;
@@ -61,7 +68,7 @@
          1px -1px 0 #000,
         -1px  1px 0 #000,
          1px  1px 0 #000;
-      pointer-events: none;          /* does not intercept clicks */
+      pointer-events: none;          /* klickt nicht "darüber" */
       z-index: 2;
     }
 
@@ -72,7 +79,7 @@
     #timer .seconds {
       font-size: 40px;
       position: relative;
-      top: -40px;
+      top: 35px;
       left: 0px;
       margin-left: 8px;
       min-width: 55px;
@@ -83,12 +90,12 @@
 <body>
   <div id="wrapper">
     <div id="timer">
-      <span id="pause-indicator">||</span>   <!-- stays in the flow as before -->
+      <span id="pause-indicator">||</span>   <!-- bleibt im Flow wie vorher -->
       <span class="hm">00:00</span>
       <span class="seconds">00</span>
     </div>
 
-    <!-- separate, absolutely positioned -->
+    <!-- separat, absolut positioniert -->
     <div id="paused-label">Paused</div>
   </div>
 
@@ -117,8 +124,8 @@
       secSpan.textContent = t.s;
 
       const show = !!data.paused;
-      pauseIcon.style.display = show ? "inline-block" : "none";  // Symbol as before
-      pausedLabel.style.display = show ? "block" : "none";       // Absolute text
+      pauseIcon.style.display = show ? "inline-block" : "none";  // Symbol wie vorher
+      pausedLabel.style.display = show ? "block" : "none";        // Absoluter Text
     }
 
     socket.on("timer_update", updateTimer);

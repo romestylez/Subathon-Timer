@@ -1,0 +1,19 @@
+{
+  "twitch": {
+    "sub_t1": 14,
+    "sub_t2": 25,
+    "sub_t3": 60,
+    "bits_per_100": 4
+  },
+  "kick": {
+    "sub": 15,
+    "kicks_per_100": 4
+  },
+  "streamelements": {
+    "minutes_per_eur": 5
+  },
+  "timer": {
+    "start_minutes": 60,
+    "max_minutes": 0
+  }
+}
