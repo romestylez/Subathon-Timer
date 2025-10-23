@@ -3,3 +3,4 @@ time_add.log
 state.json
 start.bat
 events.log
+.env
