@@ -14,8 +14,8 @@
     h1 { color: #ffcc00; }
     button {
       margin: 10px;
-      padding: 15px 30px;
-      font-size: 18px;
+      padding: 12px 24px;
+      font-size: 16px;
       cursor: pointer;
       border: none;
       border-radius: 5px;
@@ -44,6 +44,63 @@
       overflow-y: auto;
       border: 1px solid #333;
     }
+    #goals {
+      margin-top: 30px;
+      background: #111;
+      border: 1px solid #333;
+      padding: 10px 20px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+      text-align: left;
+      font-size: 14px;
+    }
+    #goals h2 {
+      text-align: center;
+      color: #ffcc00;
+      font-size: 18px;
+      margin-top: 0;
+    }
+    .goal-item {
+      margin: 5px 0;
+      color: #ffcc00;
+    }
+    .goal-item.reached {
+      color: #6aff6a;
+    }
+    .goal-inputs {
+      display: flex;
+      gap: 5px;
+      margin: 5px 0;
+    }
+    .goal-inputs input {
+      width: 60px;
+      padding: 3px;
+      text-align: center;
+    }
+    .goal-inputs input[type="text"] {
+      flex: 1;
+      text-align: left;
+    }
+    #saveGoals {
+      background: #339933;
+      width: auto;
+      padding: 8px 16px;
+      display: inline-block;
+      font-size: 15px;
+    }
+    #resetSupport {
+      background: #cc3300;
+      width: auto;
+      padding: 8px 16px;
+      display: inline-block;
+      font-size: 15px;
+      margin-left: 10px;
+    }
+    .button-row {
+      text-align: center;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -67,6 +124,21 @@
   <h2>Recent Events</h2>
   <pre id="logbox">(Waiting for events...)</pre>
 
+  <div id="goals">
+    <h2>Goals</h2>
+    <div id="total">Gesamt Support: -</div>
+    <div id="goal-list"></div>
+    <hr>
+    <h3 style="text-align:center;color:#ffcc00;">Goals bearbeiten</h3>
+    <form id="goalForm">
+      <div id="goalInputs"></div>
+      <div class="button-row">
+        <button type="button" id="saveGoals">💾 Ziele speichern</button>
+        <button type="button" id="resetSupport">🗑️ Reset Support</button>
+      </div>
+    </form>
+  </div>
+
   <script>
     const BASE = "http://localhost:5000";
 
@@ -74,18 +146,13 @@
       let h = Math.floor(sec / 3600);
       let m = Math.floor((sec % 3600) / 60);
       let s = sec % 60;
-      return (
-        String(h).padStart(2, "0") + ":" +
-        String(m).padStart(2, "0") + ":" +
-        String(s).padStart(2, "0")
-      );
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     }
 
-  function updateState(data) {
-    document.getElementById("timer").innerText = formatTime(data.remaining);
-    document.getElementById("status").innerText =
-      `Status: ${data.paused ? "Paused" : "Running"}`;
-  }
+    function updateState(data) {
+      document.getElementById("timer").innerText = formatTime(data.remaining);
+      document.getElementById("status").innerText = `Status: ${data.paused ? "Paused" : "Running"}`;
+    }
 
     function send(path) {
       fetch(BASE + path)
@@ -102,17 +169,95 @@
         .then(data => {
           const box = document.getElementById("logbox");
           box.textContent = data.lines.join("");
-          box.scrollTop = box.scrollHeight; // immer unten bleiben
+          box.scrollTop = box.scrollHeight;
         });
     }
 
-    // Auto updates
+    function loadGoals() {
+      fetch(BASE + "/goals")
+        .then(r => r.json())
+        .then(data => {
+          const total = data.total_minutes_supported;
+          const goalList = document.getElementById("goal-list");
+          const goalInputs = document.getElementById("goalInputs");
+          document.getElementById("total").innerText =
+            "Gesamt Support: " + Math.floor(total / 60) + " Stunden " + (total % 60) + " Minuten";
+
+          goalList.innerHTML = "";
+          goalInputs.innerHTML = "";
+          data.goals.forEach((g, i) => {
+            const reached = !!g.reached;
+            const emoji = reached ? "✅" : "⏳";
+            const div = document.createElement("div");
+            div.className = "goal-item" + (reached ? " reached" : "");
+            div.textContent = `${emoji} ${g.hours} Stunden - ${g.title}`;
+            goalList.appendChild(div);
+
+            // Eingabefelder
+            const row = document.createElement("div");
+            row.className = "goal-inputs";
+            row.innerHTML = `
+              <input type="number" id="hours${i}" value="${g.hours}" min="0">
+              <input type="text" id="title${i}" value="${g.title}">
+            `;
+            goalInputs.appendChild(row);
+          });
+
+          // Leere Zeilen bis 5
+          for (let i = data.goals.length; i < 5; i++) {
+            const row = document.createElement("div");
+            row.className = "goal-inputs";
+            row.innerHTML = `
+              <input type="number" id="hours${i}" placeholder="Stunden" min="0">
+              <input type="text" id="title${i}" placeholder="Titel">
+            `;
+            goalInputs.appendChild(row);
+          }
+        })
+        .catch(err => console.error("Error loading goals:", err));
+    }
+
+    document.getElementById("saveGoals").addEventListener("click", () => {
+      const newGoals = [];
+      for (let i = 0; i < 5; i++) {
+        const hours = parseInt(document.getElementById(`hours${i}`)?.value || 0);
+        const title = document.getElementById(`title${i}`)?.value.trim();
+        if (hours > 0 && title) newGoals.push({ hours, title });
+      }
+
+      fetch(BASE + "/goals/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goals: newGoals })
+      })
+      .then(r => r.json())
+      .then(() => {
+        alert("Ziele gespeichert!");
+        loadGoals();
+      })
+      .catch(err => alert("Fehler beim Speichern: " + err));
+    });
+
+    document.getElementById("resetSupport").addEventListener("click", () => {
+      if (!confirm("⚠️ Bist du sicher, dass du den gesamten Support-Zähler zurücksetzen willst?")) return;
+      fetch(BASE + "/goals/reset")
+        .then(r => r.json())
+        .then(() => {
+          alert("Gesamt-Support wurde zurückgesetzt!");
+          loadGoals();
+        })
+        .catch(err => alert("Fehler beim Reset: " + err));
+    });
+
+    // Auto-Updates
     setInterval(() => {
       fetch(BASE + "/state").then(r => r.json()).then(updateState);
     }, 1000);
-
     setInterval(loadLog, 5000);
+    setInterval(loadGoals, 10000);
+
     loadLog();
+    loadGoals();
   </script>
 </body>
 </html>

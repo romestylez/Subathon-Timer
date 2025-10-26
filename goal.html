@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Subathon Goals</title>
+  <style>
+    body {
+      margin: 0;
+      background: rgba(0, 0, 0, 0);
+      color: #ffcc00; /* Standard: alle Ziele gelb */
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.4em;
+      overflow: hidden;
+    }
+    #goalsBox {
+      padding: 10px 15px;
+      text-align: left;
+    }
+    .headline {
+      color: #ffcc00;
+      font-weight: bold;
+      margin-bottom: 5px;
+      font-size: 17px;
+    }
+    .goal-line {
+      margin: 2px 0;
+      color: #ffcc00; /* alle gelb standard */
+    }
+    .goal-line.reached {
+      color: #6aff6a; /* grün bei erreicht */
+    }
+    hr {
+      border: 0;
+      border-top: 1px solid #444;
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="goalsBox">Lade Ziele...</div>
+
+  <script>
+    const BASE = "http://localhost:5000";
+
+    function loadGoals() {
+      fetch(BASE + "/goals")
+        .then(r => r.json())
+        .then(data => {
+          const box = document.getElementById("goalsBox");
+
+          const totalMinutes = Number(data.total_minutes_supported || 0);
+          const goals = Array.isArray(data.goals) ? data.goals : [];
+
+          const hours = Math.floor(totalMinutes / 60);
+          const minutes = totalMinutes % 60;
+
+          let html = `<div class="headline">Gesamt Support: ${hours} Stunden ${minutes} Minuten</div><hr>`;
+
+          goals.forEach((g) => {
+            const reached = !!g.reached;
+            const emoji = reached ? "✅" : "⏳";
+            html += `
+              <div class="goal-line ${reached ? 'reached' : ''}">
+                ${emoji} ${Number(g.hours || 0)} Stunden – ${g.title || ""}
+              </div>
+            `;
+          });
+
+          if (goals.length === 0) {
+            html += `<div class="goal-line">(Noch keine Ziele hinterlegt)</div>`;
+          }
+
+          box.innerHTML = html;
+        })
+        .catch(() => {
+  // Kein Backend erreichbar – einfach nichts anzeigen
+  const box = document.getElementById("goalsBox");
+  box.innerHTML = "";
+});
+    }
+
+    loadGoals();
+    setInterval(loadGoals, 10000);
+  </script>
+</body>
+</html>

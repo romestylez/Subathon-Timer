@@ -77,6 +77,152 @@ STATE_FILE = "state.json"
 LOG_FILE = "events.log"
 TIME_ADD_LOG = "time_add.log"
 
+import os
+import json
+import uuid
+import threading
+import websocket
+import socketio as socketio_client
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from flask_socketio import SocketIO
+from dotenv import load_dotenv
+import time
+import datetime
+import re
+
+# --------------------
+# Helper function for timestamp
+# --------------------
+def ts():
+    return datetime.datetime.now().strftime("%d.%m.%Y - %H:%M")
+
+# --------------------
+# Load ENV variables
+# --------------------
+load_dotenv()
+
+# Debug setting (show/hide RAW events)
+DEBUG_EVENTS = os.getenv("DEBUG", "1") == "1"
+
+# Streamer 1
+LABEL_STREAMER1 = os.getenv("LABEL_STREAMER1", "Streamer1")
+SE_TWITCH_TOKEN  = os.getenv("SE_TWITCH_TOKEN")
+SE_KICK_TOKEN    = os.getenv("SE_KICK_TOKEN")
+KICK_APP_KEY     = os.getenv("KICK_APP_KEY")
+KICK_CLUSTER     = os.getenv("KICK_CLUSTER")
+KICK_CHATROOM_ID = os.getenv("KICK_CHATROOM_ID")
+TIPEEE_API_KEY   = os.getenv("TIPEEE_API_KEY")
+
+# Streamer 2
+LABEL_STREAMER2 = os.getenv("LABEL_STREAMER2", "Streamer2")
+SE2_TWITCH_TOKEN  = os.getenv("SE2_TWITCH_TOKEN")
+SE2_KICK_TOKEN    = os.getenv("SE2_KICK_TOKEN")
+KICK_APP_KEY2     = os.getenv("KICK_APP_KEY2")
+KICK_CLUSTER2     = os.getenv("KICK_CLUSTER2")
+KICK_CHATROOM_ID2 = os.getenv("KICK_CHATROOM_ID2")
+TIPEEE_API_KEY2   = os.getenv("TIPEEE_API_KEY2")
+
+# --------------------
+# Load config
+# --------------------
+with open("config.json", "r", encoding="utf-8") as f:
+    CONFIG1 = json.load(f)
+
+CONFIG2 = None
+if SE2_TWITCH_TOKEN:  # only load if token for Streamer 2 is present
+    try:
+        with open("config2.json", "r", encoding="utf-8") as f:
+            CONFIG2 = json.load(f)
+    except FileNotFoundError:
+        print(f"[{ts()}] [WARN] SE2_TWITCH_TOKEN is set, but config2.json is missing!")
+
+# --------------------
+# Flask + SocketIO setup
+# --------------------
+app = Flask(__name__)
+CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# --------------------
+# Timer variables
+# --------------------
+remaining = CONFIG1["timer"]["start_minutes"] * 60
+paused = False
+lock = threading.Lock()
+
+STATE_FILE = "state.json"
+LOG_FILE = "events.log"
+TIME_ADD_LOG = "time_add.log"
+
+# === GOALS ===
+GOALS_FILE = "goals.json"
+def load_goals():
+    if not os.path.exists(GOALS_FILE):
+        return {"total_minutes_supported": 0, "goals": []}
+    try:
+        with open(GOALS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if "total_minutes_supported" not in data:
+                data["total_minutes_supported"] = 0
+            if "goals" not in data or not isinstance(data["goals"], list):
+                data["goals"] = []
+            for g in data["goals"]:
+                g.setdefault("hours", 0)
+                g.setdefault("title", "")
+                g.setdefault("reached", False)
+            return data
+    except Exception as e:
+        print(f"[{ts()}] [GOALS] Error while loading {GOALS_FILE}:", e)
+        return {"total_minutes_supported": 0, "goals": []}
+
+def save_goals():
+    try:
+        with open(GOALS_FILE, "w", encoding="utf-8") as f:
+            json.dump(goals_data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[{ts()}] [GOALS] Error while saving {GOALS_FILE}:", e)
+
+def log_goal_reached(goal):
+    try:
+        ts_str = ts()
+        line = f"[{ts_str}] [GOAL] 🎯 Ziel erreicht: {goal['hours']} Stunden – {goal['title']}\n"
+        with open(TIME_ADD_LOG, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as e:
+        print(f"[{ts()}] [GOALS] Error while logging goal:", e)
+
+goals_data = load_goals()
+
+def check_goals_reached():
+    total_hours = goals_data.get("total_minutes_supported", 0) / 60
+    updated = False
+    for goal in goals_data.get("goals", []):
+        if not goal.get("reached") and total_hours >= goal.get("hours", 0):
+            goal["reached"] = True
+            updated = True
+            print(f"[{ts()}] [GOAL] 🎯 Ziel erreicht: {goal['hours']} Stunden – {goal['title']}")
+            log_goal_reached(goal)
+            socketio.emit("goal_reached", goal)
+    if updated:
+        save_goals()
+# === END GOALS ===
+
+def add_support_minutes(mins: int):
+    """Add positive minutes to total support, persist and re-check goals."""
+    try:
+        mins = int(mins)
+    except Exception:
+        return
+    if mins <= 0:
+        return
+    with lock:
+        goals_data["total_minutes_supported"] = int(goals_data.get("total_minutes_supported", 0)) + mins
+        save_goals()
+    # außerhalb des Locks, damit emit/log nicht blockiert
+    check_goals_reached()
+
+
 def save_state():
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
@@ -180,11 +326,14 @@ def check_pending_gift(activity_group):
         remaining += add_min * 60
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
+
+    add_support_minutes(add_min)  # <- NEU
     label = "Gifted Sub"
     msg = f"[{ts()}] [{platform}] {label} | +{add_min} minutes"
     print(msg)
     log_time_add(platform, add_min, remaining, label)
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
+
 
 def handle_event(platform, data, config):
     global remaining, community_gift_groups, pending_gifted_subs
@@ -300,7 +449,7 @@ def handle_event(platform, data, config):
             remaining += minutes_to_add * 60
             save_state()
             new_state = {"remaining": remaining, "paused": paused}
-
+        add_support_minutes(minutes_to_add)  # <- NEU
         msg = f"[{ts()}] [{platform}] {label} | +{minutes_to_add} minutes"
         print(msg)
         log_time_add(platform, minutes_to_add, remaining, label)
@@ -541,6 +690,10 @@ def change_time():
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
 
+    # Nur positive Werte zählen als Support
+    if delta_str is not None and delta > 0:
+        add_support_minutes(delta)
+
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
     print(f"[{ts()}] [MANUAL] {delta:+} minutes -> {remaining//60} min total")
 
@@ -567,6 +720,42 @@ def get_time_log():
         return jsonify({"lines": lines})
     except Exception as e:
         return jsonify({"lines": [f"Fehler beim Lesen von {TIME_ADD_LOG}: {e}\n"]})
+
+# === GOALS API ===
+@app.route("/goals")
+def get_goals():
+    return jsonify(goals_data)
+
+@app.route("/goals/update", methods=["POST"])
+def update_goals():
+    global goals_data
+    try:
+        data = request.get_json(force=True)
+        new_goals = data.get("goals", [])
+        goals_data["goals"] = []
+        for g in new_goals:
+            goals_data["goals"].append({
+                "hours": g.get("hours", 0),
+                "title": g.get("title", ""),
+                "reached": False
+            })
+        save_goals()
+        check_goals_reached()
+        print(f"[{ts()}] [GOALS] Ziele aktualisiert ({len(new_goals)} Einträge)")
+        return jsonify({"status": "ok", "goals": goals_data["goals"]})
+    except Exception as e:
+        print(f"[{ts()}] [GOALS] Fehler beim Update: {e}")
+        return jsonify({"error": str(e)}), 500
+        
+@app.route("/goals/reset")
+def reset_goals():
+    goals_data["total_minutes_supported"] = 0
+    save_goals()
+    print(f"[{ts()}] [GOALS] Gesamt-Support auf 0 zurückgesetzt")
+    return jsonify({"status": "ok", "total_minutes_supported": 0})
+    
+# === END GOALS API ===
+
 
 # --------------------
 # Main start
