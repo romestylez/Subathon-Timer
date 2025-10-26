@@ -29,6 +29,7 @@ It increases the remaining time based on subscriptions, bits, donations, or othe
 ```
 
 ⚙️ Installation
+
 ### Requirements
 Python 3.9+
 
@@ -38,6 +39,7 @@ pip install flask flask-socketio flask-cors websocket-client python-dotenv
 ```
 
 ### Setup
+
 1. Clone this repository  
 2. Create a `.env` file (see example below)  
 3. Adjust `config.json` for Streamer 1  
@@ -49,6 +51,7 @@ pip install flask flask-socketio flask-cors websocket-client python-dotenv
    By default the server runs on `http://localhost:5000`.
 
 🔑 Example .env
+
 ```
 # Streamer 1
 SE_TWITCH_TOKEN=your_twitch_token_1
@@ -71,6 +74,7 @@ TIPEEE_API_KEY2=your_tipeee_api_key_2
 👉 Kick gifts require valid Kick Chat ENV vars (`KICK_APP_KEY`, `KICK_CLUSTER`, `KICK_CHATROOM_ID`).
 
 ⚙️ Configuration (config.json / config2.json)
+
 Each streamer has their own config file (config.json for Streamer 1, config2.json for Streamer 2).
 They follow the same structure, but you can set different values per streamer:
 
@@ -105,6 +109,7 @@ Tipeee donations → tracked via Tipeee API
 All events (from Streamer 1 & 2) will add time to the same shared timer.
 
 🌐 API Endpoints
+
 All endpoints return JSON.
 
 ### Timer
@@ -125,12 +130,14 @@ All endpoints return JSON.
 - `GET /goals/reset` → Resets total support and all goal progress to zero  
 
 🖥️ Frontend
+
 - **index.html** → Overlay for OBS, shows timer + pause indicator  
 - **control.html** → Control panel with buttons for pause/resume, time adjustment, and goal editing (add/edit/save/reset)  
 - **goal.html** → Stream overlay displaying total support and goal progress  
 - **slideshow.html** → Slideshow with rewards (for display on stream)
 
 🧭 Goal System
+
 - Goals are stored persistently in `goals.json`
 - Each goal has hours, title, and a “reached” status
 - Total support increases automatically based on added time (via subs, bits, tips, etc.)
@@ -139,6 +146,7 @@ All endpoints return JSON.
 - The control panel allows manual editing and a full reset of all goals
 
 📝 Logging
+
 - `events.log` → All raw events (subs, bits, donations, Kick gifts, …)
 - `time_add.log` → Summary log of all added time (+X minutes)
 - `state.json` → Saves timer state for restarts
