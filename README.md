@@ -3,13 +3,14 @@ A **Subathon Timer** with Twitch, Kick, Tipeee and StreamElements integration.
 It increases the remaining time based on subscriptions, bits, donations, or other events.
 
 🚀 Features
-- Integration with Twitch Subs, Bits, Gifted Subs
-- Support for Kick Subs & Kick KICKS (via Kick Chat listener)
-- Tipeee & StreamElements Donations
-- Timer Web UI (for stream overlay and control)
-- Persistent Timer State (restores after restart)
-- Control via API endpoints or web interface
-- Multi-Streamer Support → 2 streamers with different configs, all events add to the same timer ✅
+
+- Integration with **Twitch Subs**, **Bits**, **Gifted Subs**  
+- Support for **Kick Subs & Kick KICKS (via Kick Chat listener)**  
+- **Tipeee & StreamElements Donations**  
+- **Timer Web UI** (for stream overlay and control)  
+- **Persistent Timer State** (restores after restart)  
+- Control via API endpoints or web interface  
+- **Multi-Streamer Support** → 2 streamers with different configs, all events add to the same timer ✅  
 - **Goal Tracking & Milestones** → Tracks total supported time, auto-marks reached goals, persistent across restarts
 
 📂 Project Structure
