@@ -141,6 +141,14 @@
 
   <script>
     const BASE = "http://localhost:5000";
+    let editingGoals = false;
+    let editTimeout;
+
+    document.getElementById("goalForm").addEventListener("input", () => {
+      editingGoals = true;
+      clearTimeout(editTimeout);
+      editTimeout = setTimeout(() => editingGoals = false, 5000); // 5 Sek. nach letztem Tipp wieder freigeben
+    });
 
     function formatTime(sec) {
       let h = Math.floor(sec / 3600);
@@ -174,6 +182,7 @@
     }
 
     function loadGoals() {
+      if (editingGoals) return; // ⛔ kein Reload während Eingabe
       fetch(BASE + "/goals")
         .then(r => r.json())
         .then(data => {
@@ -193,7 +202,6 @@
             div.textContent = `${emoji} ${g.hours} Stunden - ${g.title}`;
             goalList.appendChild(div);
 
-            // Eingabefelder
             const row = document.createElement("div");
             row.className = "goal-inputs";
             row.innerHTML = `
@@ -203,7 +211,6 @@
             goalInputs.appendChild(row);
           });
 
-          // Leere Zeilen bis 5
           for (let i = data.goals.length; i < 5; i++) {
             const row = document.createElement("div");
             row.className = "goal-inputs";
@@ -218,6 +225,7 @@
     }
 
     document.getElementById("saveGoals").addEventListener("click", () => {
+      editingGoals = false;
       const newGoals = [];
       for (let i = 0; i < 5; i++) {
         const hours = parseInt(document.getElementById(`hours${i}`)?.value || 0);
@@ -239,6 +247,7 @@
     });
 
     document.getElementById("resetSupport").addEventListener("click", () => {
+      editingGoals = false;
       if (!confirm("⚠️ Bist du sicher, dass du den gesamten Support-Zähler zurücksetzen willst?")) return;
       fetch(BASE + "/goals/reset")
         .then(r => r.json())

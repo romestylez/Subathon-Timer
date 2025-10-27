@@ -3,17 +3,17 @@
   "goals": [
     {
       "hours": 100,
-      "title": "Schnecken essen",
+      "title": "24 Stunden wach sein",
       "reached": false
     },
     {
       "hours": 200,
-      "title": "Würmer essen",
+      "title": "24 Stunden nicht rauchen",
       "reached": false
     },
     {
       "hours": 300,
-      "title": "Nummer regeln",
+      "title": "24 Stunden keinen Alkohol",
       "reached": false
     }
   ]
