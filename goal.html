@@ -7,7 +7,7 @@
     body {
       margin: 0;
       background: rgba(0, 0, 0, 0);
-      color: #ffcc00; /* Standard: alle Ziele gelb */
+      color: #ffcc00;
       font-family: Arial, sans-serif;
       font-size: 16px;
       line-height: 1.4em;
@@ -22,18 +22,21 @@
       font-weight: bold;
       margin-bottom: 5px;
       font-size: 17px;
+      display: inline-block;
+    }
+    .divider {
+      border-top: 1px solid #005fa3; /* Blau */
+      margin: 4px 0 6px 0;
+      display: block;
+      width: auto;
     }
     .goal-line {
       margin: 2px 0;
-      color: #ffcc00; /* alle gelb standard */
+      color: #ffcc00;
+      display: inline-block;
     }
     .goal-line.reached {
-      color: #6aff6a; /* grün bei erreicht */
-    }
-    hr {
-      border: 0;
-      border-top: 1px solid #444;
-      margin: 5px 0;
+      color: #6aff6a;
     }
   </style>
 </head>
@@ -55,7 +58,8 @@
           const hours = Math.floor(totalMinutes / 60);
           const minutes = totalMinutes % 60;
 
-          let html = `<div class="headline">Gesamt Support: ${hours} Stunden ${minutes} Minuten</div><hr>`;
+          let html = `<div class="headline">Gesamt Support: ${hours} Stunden ${minutes} Minuten</div>
+                      <div class="divider"></div>`;
 
           goals.forEach((g) => {
             const reached = !!g.reached;
@@ -63,7 +67,7 @@
             html += `
               <div class="goal-line ${reached ? 'reached' : ''}">
                 ${emoji} ${Number(g.hours || 0)} Stunden – ${g.title || ""}
-              </div>
+              </div><br>
             `;
           });
 
@@ -72,12 +76,25 @@
           }
 
           box.innerHTML = html;
+
+          // Textbreite dynamisch messen
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          ctx.font = "16px Arial";
+
+          let maxWidth = ctx.measureText(`Gesamt Support: ${hours} Stunden ${minutes} Minuten`).width;
+          goals.forEach((g) => {
+            const text = `${Number(g.hours || 0)} Stunden – ${g.title || ""}`;
+            const w = ctx.measureText(text).width;
+            if (w > maxWidth) maxWidth = w;
+          });
+
+          const divider = box.querySelector('.divider');
+          divider.style.width = Math.ceil(maxWidth) + 30 + 'px';
         })
         .catch(() => {
-  // Kein Backend erreichbar – einfach nichts anzeigen
-  const box = document.getElementById("goalsBox");
-  box.innerHTML = "";
-});
+          document.getElementById("goalsBox").innerHTML = "";
+        });
     }
 
     loadGoals();
