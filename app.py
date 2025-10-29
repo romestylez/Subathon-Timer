@@ -12,7 +12,6 @@ import time
 import datetime
 import re
 
-
 # --------------------
 # Helper function for timestamp
 # --------------------
@@ -36,83 +35,10 @@ KICK_CLUSTER     = os.getenv("KICK_CLUSTER")
 KICK_CHATROOM_ID = os.getenv("KICK_CHATROOM_ID")
 TIPEEE_API_KEY   = os.getenv("TIPEEE_API_KEY")
 
-# Streamer 2
-LABEL_STREAMER2 = os.getenv("LABEL_STREAMER2", "Streamer2")
-SE2_TWITCH_TOKEN  = os.getenv("SE2_TWITCH_TOKEN")
-SE2_KICK_TOKEN    = os.getenv("SE2_KICK_TOKEN")
-KICK_APP_KEY2     = os.getenv("KICK_APP_KEY2")
-KICK_CLUSTER2     = os.getenv("KICK_CLUSTER2")
-KICK_CHATROOM_ID2 = os.getenv("KICK_CHATROOM_ID2")
-TIPEEE_API_KEY2   = os.getenv("TIPEEE_API_KEY2")
-
-# --------------------
-# Load config
-# --------------------
-with open("config.json", "r", encoding="utf-8") as f:
-    CONFIG1 = json.load(f)
-
-CONFIG2 = None
-if SE2_TWITCH_TOKEN:  # only load if token for Streamer 2 is present
-    try:
-        with open("config2.json", "r", encoding="utf-8") as f:
-            CONFIG2 = json.load(f)
-    except FileNotFoundError:
-        print(f"[{ts()}] [WARN] SE2_TWITCH_TOKEN is set, but config2.json is missing!")
-
-# --------------------
-# Flask + SocketIO setup
-# --------------------
-app = Flask(__name__)
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
-
-# --------------------
-# Timer variables
-# --------------------
-remaining = CONFIG1["timer"]["start_minutes"] * 60
-paused = False
-lock = threading.Lock()
-
-STATE_FILE = "state.json"
-LOG_FILE = "events.log"
-TIME_ADD_LOG = "time_add.log"
-
-import os
-import json
-import uuid
-import threading
-import websocket
-import socketio as socketio_client
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-from flask_socketio import SocketIO
-from dotenv import load_dotenv
-import time
-import datetime
-import re
-
-# --------------------
-# Helper function for timestamp
-# --------------------
-def ts():
-    return datetime.datetime.now().strftime("%d.%m.%Y - %H:%M")
-
-# --------------------
-# Load ENV variables
-# --------------------
-load_dotenv()
-
-# Debug setting (show/hide RAW events)
-DEBUG_EVENTS = os.getenv("DEBUG", "1") == "1"
-
-# Streamer 1
-LABEL_STREAMER1 = os.getenv("LABEL_STREAMER1", "Streamer1")
-SE_TWITCH_TOKEN  = os.getenv("SE_TWITCH_TOKEN")
-SE_KICK_TOKEN    = os.getenv("SE_KICK_TOKEN")
-KICK_APP_KEY     = os.getenv("KICK_APP_KEY")
-KICK_CLUSTER     = os.getenv("KICK_CLUSTER")
-KICK_CHATROOM_ID = os.getenv("KICK_CHATROOM_ID")
-TIPEEE_API_KEY   = os.getenv("TIPEEE_API_KEY")
+# Twitch IRC (Streamer 1)
+TWITCH_IRC_TOKEN   = os.getenv("TWITCH_IRC_TOKEN")
+TWITCH_IRC_NICK    = os.getenv("TWITCH_IRC_NICK")
+TWITCH_IRC_CHANNEL = os.getenv("TWITCH_IRC_CHANNEL")  # ohne '#'
 
 # Streamer 2
 LABEL_STREAMER2 = os.getenv("LABEL_STREAMER2", "Streamer2")
@@ -122,6 +48,11 @@ KICK_APP_KEY2     = os.getenv("KICK_APP_KEY2")
 KICK_CLUSTER2     = os.getenv("KICK_CLUSTER2")
 KICK_CHATROOM_ID2 = os.getenv("KICK_CHATROOM_ID2")
 TIPEEE_API_KEY2   = os.getenv("TIPEEE_API_KEY2")
+
+# Twitch IRC (Streamer 2)
+TWITCH_IRC_TOKEN2   = os.getenv("TWITCH_IRC_TOKEN2")
+TWITCH_IRC_NICK2    = os.getenv("TWITCH_IRC_NICK2")
+TWITCH_IRC_CHANNEL2 = os.getenv("TWITCH_IRC_CHANNEL2")  # ohne '#'
 
 # --------------------
 # Load config
@@ -159,12 +90,19 @@ TIME_ADD_LOG = "time_add.log"
 GOALS_FILE = "goals.json"
 def load_goals():
     if not os.path.exists(GOALS_FILE):
-        return {"total_minutes_supported": 0, "goals": []}
+        return {"total_minutes_supported": 0.0, "goals": []}
     try:
         with open(GOALS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+            # ensure keys
             if "total_minutes_supported" not in data:
-                data["total_minutes_supported"] = 0
+                data["total_minutes_supported"] = 0.0
+            else:
+                # migrate int -> float
+                try:
+                    data["total_minutes_supported"] = float(data["total_minutes_supported"])
+                except:
+                    data["total_minutes_supported"] = 0.0
             if "goals" not in data or not isinstance(data["goals"], list):
                 data["goals"] = []
             for g in data["goals"]:
@@ -174,7 +112,7 @@ def load_goals():
             return data
     except Exception as e:
         print(f"[{ts()}] [GOALS] Error while loading {GOALS_FILE}:", e)
-        return {"total_minutes_supported": 0, "goals": []}
+        return {"total_minutes_supported": 0.0, "goals": []}
 
 def save_goals():
     try:
@@ -195,10 +133,10 @@ def log_goal_reached(goal):
 goals_data = load_goals()
 
 def check_goals_reached():
-    total_hours = goals_data.get("total_minutes_supported", 0) / 60
+    total_hours = float(goals_data.get("total_minutes_supported", 0.0)) / 60.0
     updated = False
     for goal in goals_data.get("goals", []):
-        if not goal.get("reached") and total_hours >= goal.get("hours", 0):
+        if not goal.get("reached") and total_hours >= float(goal.get("hours", 0)):
             goal["reached"] = True
             updated = True
             print(f"[{ts()}] [GOAL] 🎯 Ziel erreicht: {goal['hours']} Stunden – {goal['title']}")
@@ -208,20 +146,21 @@ def check_goals_reached():
         save_goals()
 # === END GOALS ===
 
-def add_support_minutes(mins: int):
-    """Add positive minutes to total support, persist and re-check goals."""
+def add_support_minutes(mins):
+    """Add positive minutes (float) to total support, persist and re-check goals."""
     try:
-        mins = int(mins)
+        mins = float(mins)
     except Exception:
         return
     if mins <= 0:
         return
     with lock:
-        goals_data["total_minutes_supported"] = int(goals_data.get("total_minutes_supported", 0)) + mins
+        goals_data["total_minutes_supported"] = float(goals_data.get("total_minutes_supported", 0.0)) + mins
+        # slightly round to avoid floating point artifacts
+        goals_data["total_minutes_supported"] = round(goals_data["total_minutes_supported"], 2)
         save_goals()
-    # außerhalb des Locks, damit emit/log nicht blockiert
+     # outside of the lock
     check_goals_reached()
-
 
 def save_state():
     try:
@@ -251,7 +190,7 @@ def log_event(platform, data):
     except Exception as e:
         print(f"[{ts()}] [LOG] Error while writing to events.log:", e)
 
-def log_time_add(platform, minutes_to_add, remaining, label=None):
+def log_time_add(platform, minutes_to_add, remaining_seconds, label=None):
     """Write time addition summary (same as console) to a separate logfile"""
     try:
         ts_str = ts()
@@ -263,7 +202,6 @@ def log_time_add(platform, minutes_to_add, remaining, label=None):
             f.write(line)
     except Exception as e:
         print(f"[{ts()}] [LOG] Error while writing to time_add.log:", e)
-
 
 # Load existing state on startup
 load_state()
@@ -279,8 +217,7 @@ def timer_loop():
             if not paused and remaining > 0:
                 remaining -= 1
             socketio.emit("timer_update", {"remaining": remaining, "paused": paused})
-
-            # alle 300 Sekunden (= 5 Minuten) State speichern
+            # save state every 300 seconds (= 5 minutes)
             counter += 1
             if counter >= 300:
                 save_state()
@@ -310,9 +247,8 @@ def check_pending_gift(activity_group):
     """
     info = pending_gifted_subs.pop(activity_group, None)
     if not info:
-        return  # nichts offen (oder bereits als Bundle erkannt)
-
-    # Wenn die Group inzwischen als Bundle markiert wurde -> ignorieren
+        return  # nothing pending (or already recognized as a bundle)
+    # If the group has already been marked as a bundle -> ignore
     if activity_group in community_gift_groups:
         return
 
@@ -327,24 +263,69 @@ def check_pending_gift(activity_group):
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
 
-    add_support_minutes(add_min)  # <- NEU
+    add_support_minutes(add_min)
     label = "Gifted Sub"
     msg = f"[{ts()}] [{platform}] {label} | +{add_min} minutes"
     print(msg)
     log_time_add(platform, add_min, remaining, label)
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
+def apply_minutes(platform, minutes_to_add, label):
+    """Helper to apply minutes, log and emit."""
+    if minutes_to_add <= 0:
+        return
+    with lock:
+        global remaining
+        remaining += int(round(minutes_to_add * 60))  # round up to seconds
+        save_state()
+        new_state = {"remaining": remaining, "paused": paused}
+    add_support_minutes(minutes_to_add)
+    print(f"[{ts()}] [{platform}] {label} | +{round(minutes_to_add, 2)} minutes")
+    log_time_add(platform, round(minutes_to_add, 2), remaining, label)
+    socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
 def handle_event(platform, data, config):
     global remaining, community_gift_groups, pending_gifted_subs
-    minutes_to_add = 0
+    minutes_to_add = 0.0
 
     # RAW event to logfile + optional console
     if DEBUG_EVENTS:
-        print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2)}")
+        try:
+            print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2, ensure_ascii=False)}")
+        except Exception:
+            print(f"[{ts()}] [{platform}] RAW EVENT (non-json-printable)")
     log_event(platform, data)
 
     etype = data.get("type")
+    text = data.get("data", {}).get("text", "")
+
+    # Completely ignore normal IRC chat messages
+    # (only continue if it's the SoundAlerts Bits trigger sentence)
+
+    if etype == "message" and re.search(r"(.+?) löst (.+?) mit (\d+)\s*Bits aus", text, flags=re.IGNORECASE) is None:
+        return
+
+    # From here on, only log and process relevant events
+    log_event(platform, data)
+
+
+    # SoundAlerts chat bits parsing (from chat source)
+    if etype == "message":
+        text = data.get("data", {}).get("text", "")
+        match = re.search(r"(.+?) löst (.+?) mit (\d+)\s*Bits aus", text, flags=re.IGNORECASE)
+        if match:
+            user = match.group(1)
+            alert_name = match.group(2)
+            bits = int(match.group(3))
+
+            minutes_to_add = (bits / 100.0) * float(config["twitch"]["bits_per_100"])
+            minutes_to_add = round(minutes_to_add, 2)
+            # Platform label: replace "-IRC" with "-SoundAlerts" to keep logs clean
+            nice_platform = platform.replace("-IRC", "-SoundAlerts")
+
+            apply_minutes(nice_platform, minutes_to_add, f"SoundAlerts {bits} Bits")
+
+            return  # handled
 
     # Twitch/Kick subs via StreamElements
     if etype == "subscriber":
@@ -357,13 +338,11 @@ def handle_event(platform, data, config):
         # --- Kick subs ---
         if "kick" in provider or "kick" in platform.lower():
             if "kick" in config:
-                minutes_to_add = config["kick"]["sub"]
+                minutes_to_add = float(config["kick"]["sub"])
 
         # --- Twitch subs ---
         else:
             if gifted:
-                # Falls SE eine activityGroup mitliefert, warten wir 10s ab,
-                # ob ein communityGiftPurchase mit derselben Group kommt.
                 if ag:
                     pending_gifted_subs[ag] = {
                         "platform": platform,
@@ -374,11 +353,9 @@ def handle_event(platform, data, config):
                     threading.Timer(10.0, check_pending_gift, args=(ag,)).start()
                     return
                 else:
-                    # selten, aber falls kein ag vorhanden -> sofort als Einzelgift zählen
-                    minutes_to_add = minutes_for_tier(config, tier_raw)
+                    minutes_to_add = float(minutes_for_tier(config, tier_raw))
             else:
-                # normaler Sub / Resub
-                minutes_to_add = minutes_for_tier(config, tier_raw)
+                minutes_to_add = float(minutes_for_tier(config, tier_raw))
 
     # Gifted subs (Bundle)
     elif etype == "communityGiftPurchase":
@@ -386,42 +363,38 @@ def handle_event(platform, data, config):
         gift_amount = int(d.get("amount", 1))
         tier_raw = str(d.get("tier", "1000")).lower()
         ag = data.get("activityGroup")
-
-        # Group als Bundle markieren
         if ag:
             community_gift_groups.add(ag)
-            # ggf. wartenden gifted-sub-Eintrag entfernen (falls bereits pending)
             pending_gifted_subs.pop(ag, None)
+        minutes_to_add = float(gift_amount) * float(minutes_for_tier(config, tier_raw))
 
-        minutes_to_add = gift_amount * minutes_for_tier(config, tier_raw)
-
-    # Bits
+    # Bits (normale Twitch-Cheers aus SE-Activities)
     elif etype == "cheer":
         bits = int(data.get("data", {}).get("amount", 0))
-        minutes_to_add = (bits // 100) * config["twitch"]["bits_per_100"]
+        minutes_to_add = round((bits / 100.0) * float(config["twitch"]["bits_per_100"]), 2)
 
     # Donations via Tipeee
     elif etype == "donation" and "tipeee" in config:
         amount = float(data.get("amount", 0))
-        minutes_to_add = int(amount * config["tipeee"]["minutes_per_eur"])
+        minutes_to_add = float(amount) * float(config["tipeee"]["minutes_per_eur"])
 
     # Donations via StreamElements
     elif etype == "tip" and "streamelements" in config:
         amount = float(data.get("data", {}).get("amount", 0))
-        minutes_to_add = int(amount * config["streamelements"]["minutes_per_eur"])
+        minutes_to_add = float(amount) * float(config["streamelements"]["minutes_per_eur"])
 
     # Kick gifts via Chat
     elif etype == "kick_gift":
         if "kick" in config:
             amount = int(data.get("amount", 0))
-            minutes_to_add = (amount // 100) * config["kick"]["kicks_per_100"]
+            minutes_to_add = float((amount // 100) * int(config["kick"]["kicks_per_100"]))
 
     # --- Apply time addition ---
     if minutes_to_add > 0:
         # passendes Label bestimmen
         label = ""
         if etype == "subscriber":
-            if gifted:
+            if 'gifted' in locals() and gifted:
                 label = "Gifted Sub"
             else:
                 if tier_raw == "1000" or tier_raw == "prime":
@@ -433,31 +406,22 @@ def handle_event(platform, data, config):
                 else:
                     label = "Sub"
         elif etype == "communityGiftPurchase":
-            label = f"Gift Bundle ({gift_amount} Subs)"
+            label = f"Gift Bundle"
         elif etype == "cheer":
-            label = f"Bits ({bits})"
+            label = f"Bits"
         elif etype == "donation":
             label = f"Donation ({amount:.2f} €)"
         elif etype == "tip":
             label = f"Tip ({amount:.2f} €)"
         elif etype == "kick_gift":
-            label = f"Kick Gift ({amount})"
+            label = f"Kick Gift"
         else:
             label = etype.capitalize()
 
-        with lock:
-            remaining += minutes_to_add * 60
-            save_state()
-            new_state = {"remaining": remaining, "paused": paused}
-        add_support_minutes(minutes_to_add)  # <- NEU
-        msg = f"[{ts()}] [{platform}] {label} | +{minutes_to_add} minutes"
-        print(msg)
-        log_time_add(platform, minutes_to_add, remaining, label)
-        socketio.start_background_task(socketio.emit, "timer_update", new_state)
-
+        apply_minutes(platform, float(minutes_to_add), label)
 
 # --------------------
-# StreamElements WS with auto-reconnect
+# StreamElements WS with auto-reconnect (activities only)
 # --------------------
 def start_client(name, token, config):
     url = "wss://astro.streamelements.com"
@@ -467,7 +431,13 @@ def start_client(name, token, config):
             print(f"[{ts()}] [{name}] Connected")
 
         def on_message(ws, message):
-            msg = json.loads(message)
+            try:
+                msg = json.loads(message)
+            except Exception:
+                if DEBUG_EVENTS:
+                    print(f"[{ts()}] [{name}] Non-JSON message: {message}")
+                return
+
             if msg.get("type") == "welcome":
                 subscribe(ws, "channel.activities", token, name)
             elif msg.get("type") == "message":
@@ -503,6 +473,77 @@ def start_client(name, token, config):
     threading.Thread(target=run_ws, daemon=True).start()
 
 # --------------------
+# Twitch IRC Chat (for SoundAlerts parsing)
+# --------------------
+def start_twitch_chat(name, oauth_token, nick, channel, config):
+    """
+    Connects to Twitch IRC via WebSocket and forwards chat lines to handle_event
+    so SoundAlerts messages can be parsed and counted.
+    """
+    if not oauth_token or not nick or not channel:
+        print(f"[{ts()}] [INFO] Twitch IRC for {name} skipped (missing ENV)")
+        return
+
+    url = "wss://irc-ws.chat.twitch.tv:443"
+    chan = f"#{channel}"
+
+    def run_irc():
+        def on_open(ws):
+            print(f"[{ts()}] [{name}] IRC connected -> JOIN {chan}")
+            # Twitch IRC capabilities (we don't strictly need tags here)
+            ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
+            ws.send(f"PASS {oauth_token}\r\n")
+            ws.send(f"NICK {nick}\r\n")
+            ws.send(f"JOIN {chan}\r\n")
+
+        def on_message(ws, message):
+            # Twitch IRC can bunch multiple messages separated by \r\n
+            for raw in message.split("\r\n"):
+                if not raw:
+                    continue
+                if DEBUG_EVENTS:
+                    print(f"[{ts()}] [{name}] IRC RAW: {raw}")
+
+                # PING -> PONG
+                if raw.startswith("PING"):
+                    ws.send("PONG :tmi.twitch.tv\r\n")
+                    continue
+
+                # Parse PRIVMSG to extract text
+                # Example:
+                # @tags :username!username@username.tmi.twitch.tv PRIVMSG #channel :message text here
+                try:
+                    if " PRIVMSG " in raw:
+                        parts = raw.split(" PRIVMSG ", 1)
+                        trailing = parts[1].split(" :", 1)
+                        if len(trailing) == 2:
+                            text = trailing[1]
+                            # Forward to handle_event as a chat "message"
+                            fake = {"type": "message", "data": {"text": text}}
+                            handle_event(name, fake, config)
+                except Exception as e:
+                    print(f"[{ts()}] [{name}] IRC parse error:", e)
+
+        def on_error(ws, error):
+            print(f"[{ts()}] [{name}] IRC error:", error)
+
+        def on_close(ws, close_status_code, close_msg):
+            print(f"[{ts()}] [{name}] IRC closed, reconnect in 3s")
+            time.sleep(3)
+            run_irc()
+
+        ws = websocket.WebSocketApp(
+            url,
+            on_open=on_open,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close
+        )
+        ws.run_forever()
+
+    threading.Thread(target=run_irc, daemon=True).start()
+
+# --------------------
 # Kick Chat Listener (for Kick Gifts via Chat)
 # --------------------
 def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
@@ -526,7 +567,7 @@ def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
                 inner = json.loads(payload["data"])
                 text = inner.get("content", "")
                 if DEBUG_EVENTS:
-                    print(f"[{ts()}] [{name}] RAW CHAT EVENT: {json.dumps(inner, indent=2)}")
+                    print(f"[{ts()}] [{name}] RAW CHAT EVENT: {json.dumps(inner, indent=2, ensure_ascii=False)}")
                 log_event(name, inner)
                 m = re.search(r"gifted\s+(\d+)\s+KICK", text, re.IGNORECASE)
                 if m:
@@ -567,7 +608,6 @@ def start_tipeee(name, api_key, config):
     def connect():
         print(f"[{ts()}] [{name}] Connected to Tipeee -> listening for donations")
 
-
     @sio.event
     def disconnect():
         print(f"[{ts()}] [{name}] Disconnected from Tipeee")
@@ -581,7 +621,7 @@ def start_tipeee(name, api_key, config):
                 amount = float(params.get("amount", 0))
                 user = params.get("username", "Unknown")
                 if DEBUG_EVENTS:
-                    print(f"[{ts()}] [{name}] RAW TIPEEE EVENT: {json.dumps(ev, indent=2)}")
+                    print(f"[{ts()}] [{name}] RAW TIPEEE EVENT: {json.dumps(ev, indent=2, ensure_ascii=False)}")
                 log_event(name, ev)
                 fake = {"type": "donation", "amount": amount, "user": user}
                 handle_event(name, fake, config)
@@ -692,7 +732,7 @@ def change_time():
 
     # Nur positive Werte zählen als Support
     if delta_str is not None and delta > 0:
-        add_support_minutes(delta)
+        add_support_minutes(float(delta))
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
     print(f"[{ts()}] [MANUAL] {delta:+} minutes -> {remaining//60} min total")
@@ -746,16 +786,14 @@ def update_goals():
     except Exception as e:
         print(f"[{ts()}] [GOALS] Fehler beim Update: {e}")
         return jsonify({"error": str(e)}), 500
-        
+
 @app.route("/goals/reset")
 def reset_goals():
-    goals_data["total_minutes_supported"] = 0
+    goals_data["total_minutes_supported"] = 0.0
     save_goals()
     print(f"[{ts()}] [GOALS] Gesamt-Support auf 0 zurückgesetzt")
-    return jsonify({"status": "ok", "total_minutes_supported": 0})
-    
+    return jsonify({"status": "ok", "total_minutes_supported": 0.0})
 # === END GOALS API ===
-
 
 # --------------------
 # Main start
@@ -763,15 +801,21 @@ def reset_goals():
 if __name__ == "__main__":
     socketio.start_background_task(timer_loop)
 
-    # Streamer 1
+    # StreamElements Activities (Subs/Bits/Donations etc.)
     if SE_TWITCH_TOKEN:
         start_client(f"{LABEL_STREAMER1}-Twitch", SE_TWITCH_TOKEN, CONFIG1)
     if SE_KICK_TOKEN:
         start_client(f"{LABEL_STREAMER1}-Kick", SE_KICK_TOKEN, CONFIG1)
+
+    # Twitch IRC Chat (SoundAlerts Chatzeilen)
+    start_twitch_chat(f"{LABEL_STREAMER1}-IRC", TWITCH_IRC_TOKEN, TWITCH_IRC_NICK, TWITCH_IRC_CHANNEL, CONFIG1)
+
+    # Kick Chat (optional)
     connect_kick_chat(f"{LABEL_STREAMER1}-KickChat", KICK_APP_KEY, KICK_CLUSTER, KICK_CHATROOM_ID, CONFIG1)
+
+    # Tipeee (optional)
     if TIPEEE_API_KEY:
         start_tipeee(f"{LABEL_STREAMER1}-Tipeee", TIPEEE_API_KEY, CONFIG1)
-
 
     # Streamer 2
     if SE2_TWITCH_TOKEN and CONFIG2:
@@ -779,11 +823,10 @@ if __name__ == "__main__":
     if SE2_KICK_TOKEN and CONFIG2:
         start_client(f"{LABEL_STREAMER2}-Kick", SE2_KICK_TOKEN, CONFIG2)
     if CONFIG2:
+        start_twitch_chat(f"{LABEL_STREAMER2}-IRC", TWITCH_IRC_TOKEN2, TWITCH_IRC_NICK2, TWITCH_IRC_CHANNEL2, CONFIG2)
         connect_kick_chat(f"{LABEL_STREAMER2}-KickChat", KICK_APP_KEY2, KICK_CLUSTER2, KICK_CHATROOM_ID2, CONFIG2)
     if TIPEEE_API_KEY2 and CONFIG2:
         start_tipeee(f"{LABEL_STREAMER2}-Tipeee", TIPEEE_API_KEY2, CONFIG2)
-
-
 
     print(f"[{ts()}] [APP] Subathon timer running at http://localhost:5000")
     socketio.run(app, host="0.0.0.0", port=5000)
