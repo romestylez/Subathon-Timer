@@ -55,8 +55,15 @@
           const totalMinutes = Number(data.total_minutes_supported || 0);
           const goals = Array.isArray(data.goals) ? data.goals : [];
 
-          const hours = Math.floor(totalMinutes / 60);
-          const minutes = totalMinutes % 60;
+          // ✅ RUNDUNG eingebaut
+          let hours = Math.floor(totalMinutes / 60);
+          let minutes = Math.round(totalMinutes % 60);
+
+          // ✅ Falls Minuten durch Rundung genau 60 → Stunde +1
+          if (minutes === 60) {
+            hours += 1;
+            minutes = 0;
+          }
 
           let html = `<div class="headline">Gesamt Support: ${hours} Stunden ${minutes} Minuten</div>
                       <div class="divider"></div>`;
