@@ -4,3 +4,4 @@ state.json
 start.bat
 events.log
 .env
+goals.json
