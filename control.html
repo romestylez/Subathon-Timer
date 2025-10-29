@@ -189,8 +189,20 @@
           const total = data.total_minutes_supported;
           const goalList = document.getElementById("goal-list");
           const goalInputs = document.getElementById("goalInputs");
-          document.getElementById("total").innerText =
-            "Gesamt Support: " + Math.floor(total / 60) + " Stunden " + (total % 60) + " Minuten";
+          function formatHoursMinutes(totalMinutes) {
+  // auf ganze Minuten runden (verhindert 52.90000000006 usw.)
+  const total = Math.round(totalMinutes);
+  let hours = Math.floor(total / 60);
+  let minutes = total - hours * 60;
+  // Sicherheitsnetz falls durch Rundung 60 Minuten entstehen
+  if (minutes === 60) { hours += 1; minutes = 0; }
+  return { hours, minutes };
+}
+
+const { hours, minutes } = formatHoursMinutes(total);
+document.getElementById("total").innerText =
+  `Gesamt Support: ${hours} Stunden ${minutes} Minuten`;
+
 
           goalList.innerHTML = "";
           goalInputs.innerHTML = "";
