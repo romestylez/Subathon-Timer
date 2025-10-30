@@ -239,6 +239,10 @@ def minutes_for_tier(cfg, tier_raw):
         return cfg["twitch"]["sub_t3"]
     return cfg["twitch"]["sub_t1"]
 
+def fmt_minutes(val: float):
+    val = float(val)
+    return int(val) if val.is_integer() else round(val, 1)
+
 def check_pending_gift(activity_group):
     """
     Wird verzögert (10s) aufgerufen.
@@ -265,9 +269,12 @@ def check_pending_gift(activity_group):
 
     add_support_minutes(add_min)
     label = "Gifted Sub"
-    msg = f"[{ts()}] [{platform}] {label} | +{add_min} minutes"
+    m = fmt_minutes(add_min)
+    msg = f"[{ts()}] [{platform}] {label} | +{m} minutes"
     print(msg)
-    log_time_add(platform, add_min, remaining, label)
+    log_time_add(platform, m, remaining, label)
+
+
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
 def apply_minutes(platform, minutes_to_add, label):
@@ -280,8 +287,9 @@ def apply_minutes(platform, minutes_to_add, label):
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
     add_support_minutes(minutes_to_add)
-    print(f"[{ts()}] [{platform}] {label} | +{round(minutes_to_add, 2)} minutes")
-    log_time_add(platform, round(minutes_to_add, 2), remaining, label)
+    m = fmt_minutes(minutes_to_add)
+    print(f"[{ts()}] [{platform}] {label} | +{m} minutes")
+    log_time_add(platform, m, remaining, label)
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
 def handle_event(platform, data, config):
