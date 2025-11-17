@@ -120,6 +120,16 @@
     <button class="time-btn" onclick="send('/time?minusdelta=5')">-5 Min</button>
     <button class="time-btn" onclick="send('/time?minusdelta=10')">-10 Min</button>
   </div>
+  <h2>🎉 Happy Hour</h2>
+<div>
+  <button onclick="startHappyHour()">▶️ Start Happy Hour</button>
+  <button onclick="stopHappyHour()">⛔ Stop Happy Hour</button>
+</div>
+
+<div id="happyStatus" style="margin-top:10px; font-size:20px; color:#ffcc00;">
+  Happy Hour: nicht aktiv
+</div>
+
 
   <h2>Recent Events</h2>
   <pre id="logbox">(Waiting for events...)</pre>
@@ -279,6 +289,75 @@ document.getElementById("total").innerText =
 
     loadLog();
     loadGoals();
+	
+	function startHappyHour() {
+    const minutes = prompt("Happy Hour Dauer (Minuten):", "60");
+    if (!minutes) return;
+    fetch(BASE + "/happyhour?start&time=" + minutes)
+        .then(r => r.json())
+        .then(d => alert("Happy Hour gestartet! x" + d.multiplier))
+        .catch(err => alert("Fehler: " + err));
+}
+
+	function stopHappyHour() {
+    fetch(BASE + "/happyhour?stop")
+        .then(r => r.json())
+        .then(() => alert("Happy Hour gestoppt."))
+        .catch(err => alert("Fehler: " + err));
+}
+
+let happyRemaining = 0;
+let happyActive = false;
+let happyMultiplier = 1;
+
+// Minuten+Sekunden Format
+function formatHH(sec) {
+  let m = Math.floor(sec / 60);
+  let s = sec % 60;
+  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+
+// /happyhour Polling
+function updateHappyHour() {
+  fetch(BASE + "/happyhour")
+    .then(r => r.json())
+    .then(d => {
+      happyActive = d.active;
+      happyRemaining = d.remaining_seconds;
+      happyMultiplier = d.multiplier;
+
+      const box = document.getElementById("happyStatus");
+
+      if (!d.active) {
+        box.innerText = "Happy Hour: nicht aktiv";
+        box.style.color = "#ffcc00";
+      } else {
+        box.innerText =
+          `Happy Hour aktiv! x${happyMultiplier}\n` +
+          `Restzeit: ${formatHH(happyRemaining)}`;
+        box.style.color = "#00ff66";
+      }
+    })
+    .catch(err => console.error("HappyHour error:", err));
+}
+
+// 1-Sekunden-Countdown
+setInterval(() => {
+  if (happyActive && happyRemaining > 0) {
+    happyRemaining--;
+    const box = document.getElementById("happyStatus");
+    box.innerText =
+      `Happy Hour aktiv! x${happyMultiplier}\n` +
+      `Restzeit: ${formatHH(happyRemaining)}`;
+  }
+}, 1000);
+
+// API-Polling alle 5 sec
+setInterval(updateHappyHour, 5000);
+
+// direkt laden
+updateHappyHour();
+
   </script>
 </body>
 </html>

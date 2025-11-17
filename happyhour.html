@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Happy Hour Status</title>
+  <style>
+    body {
+      margin: 0;
+      background: rgba(0,0,0,0);
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+      padding: 6px 10px;
+    }
+
+    #hhBox {
+      color: #ffcc00;       /* same yellow as .headline */
+      font-weight: bold;    /* same weight */
+      font-size: 17px;      /* same size */
+      display: inline-block;
+      line-height: 1.2em;
+      white-space: nowrap;
+      visibility: hidden;   /* hidden when no text */
+    }
+  </style>
+</head>
+<body>
+
+  <div id="hhBox"></div>
+
+  <script>
+    const BASE = "http://localhost:5000";
+
+    let happyActive = false;
+    let happyRemaining = 0;
+    let happyMultiplier = 1;
+
+    // Format seconds into mm:ss or hh:mm:ss
+    function fmt(sec) {
+      if (sec >= 3600) {
+        let h = Math.floor(sec / 3600);
+        let m = Math.floor((sec % 3600) / 60);
+        let s = sec % 60;
+        return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      } else {
+        let m = Math.floor(sec / 60);
+        let s = sec % 60;
+        return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      }
+    }
+
+    // Poll Happy Hour status
+    function loadHH() {
+      fetch(BASE + "/happyhour")
+        .then(r => r.json())
+        .then(d => {
+          happyActive = d.active;
+          happyRemaining = d.remaining_seconds;
+          happyMultiplier = d.multiplier;
+          updateBox();
+        })
+        .catch(() => {});
+    }
+
+    // Update the display
+    function updateBox() {
+      const box = document.getElementById("hhBox");
+
+      if (!happyActive) {
+        box.innerText = "";
+        box.style.visibility = "hidden"; // hide completely
+        return;
+      }
+
+      box.innerText = `Happy Hour x${happyMultiplier} - ${fmt(happyRemaining)}`;
+      box.style.visibility = "visible";
+    }
+
+    // Local countdown
+    setInterval(() => {
+      if (happyActive && happyRemaining > 0) {
+        happyRemaining--;
+        updateBox();
+      }
+    }, 1000);
+
+    // Poll every 5 sec
+    setInterval(loadHH, 5000);
+
+    // Initial load
+    loadHH();
+  </script>
+</body>
+</html>

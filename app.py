@@ -82,6 +82,14 @@ remaining = CONFIG1["timer"]["start_minutes"] * 60
 paused = False
 lock = threading.Lock()
 
+# --------------------
+# Happy Hour
+# --------------------
+HAPPY_MULTIPLIER = float(os.getenv("HAPPY_MULTIPLIER", "1"))
+happy_active = False
+happy_until = 0
+
+
 STATE_FILE = "state.json"
 LOG_FILE = "events.log"
 TIME_ADD_LOG = "time_add.log"
@@ -182,13 +190,16 @@ def load_state():
             print(f"[{ts()}] [STATE] Error while loading:", e)
 
 def log_event(platform, data):
-    """Write all RAW events additionally into a logfile"""
+    if not DEBUG_EVENTS:
+        return  # do nothing when debug=0
+
     try:
         ts_str = ts()
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{ts_str}] [{platform}] RAW EVENT: {json.dumps(data, ensure_ascii=False)}\n")
     except Exception as e:
         print(f"[{ts()}] [LOG] Error while writing to events.log:", e)
+
 
 def log_time_add(platform, minutes_to_add, remaining_seconds, label=None):
     """Write time addition summary (same as console) to a separate logfile"""
@@ -210,12 +221,19 @@ load_state()
 # Timer loop
 # --------------------
 def timer_loop():
-    global remaining
+    global remaining, happy_active, happy_until
     counter = 0
     while True:
         with lock:
             if not paused and remaining > 0:
                 remaining -= 1
+
+            # Happy Hour automatisch deaktivieren, wenn abgelaufen
+            if happy_active and time.time() >= happy_until:
+                happy_active = False
+                happy_until = 0
+                print(f"[{ts()}] [HAPPY] Happy Hour expired")
+
             socketio.emit("timer_update", {"remaining": remaining, "paused": paused})
             # save state every 300 seconds (= 5 minutes)
             counter += 1
@@ -223,6 +241,7 @@ def timer_loop():
                 save_state()
                 counter = 0
         socketio.sleep(1)
+
 
 # --------------------
 # Handle events
@@ -259,7 +278,7 @@ def check_pending_gift(activity_group):
     platform = info["platform"]
     tier_raw = info["tier"]
     cfg = info["config"]
-    add_min = minutes_for_tier(cfg, tier_raw)
+    add_min = minutes_for_tier(cfg, tier_raw) * get_current_multiplier()
 
     with lock:
         global remaining
@@ -270,27 +289,58 @@ def check_pending_gift(activity_group):
     add_support_minutes(add_min)
     label = "Gifted Sub"
     m = fmt_minutes(add_min)
-    msg = f"[{ts()}] [{platform}] {label} | +{m} minutes"
+    prefix = ""
+    if get_current_multiplier() != 1.0:
+        prefix = f"[HAPPY HOUR x{HAPPY_MULTIPLIER}] "
+
+
+    msg = f"[{ts()}] {prefix}[{platform}] {label} | +{m} minutes"
     print(msg)
-    log_time_add(platform, m, remaining, label)
+    log_time_add(platform, m, remaining, prefix + label)
+
 
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
+
+
 
 def apply_minutes(platform, minutes_to_add, label):
     """Helper to apply minutes, log and emit."""
     if minutes_to_add <= 0:
         return
+
+    # apply Happy Hour multiplier (NOT for manual additions)
+    multiplier = get_current_multiplier()
+    if multiplier != 1.0:
+        minutes_to_add = minutes_to_add * multiplier
+
     with lock:
         global remaining
         remaining += int(round(minutes_to_add * 60))  # round up to seconds
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
+
     add_support_minutes(minutes_to_add)
     m = fmt_minutes(minutes_to_add)
-    print(f"[{ts()}] [{platform}] {label} | +{m} minutes")
-    log_time_add(platform, m, remaining, label)
+
+
+    # Prefix bauen, wenn Happy Hour aktiv ist
+    prefix = ""
+    if get_current_multiplier() != 1.0:
+        prefix = f"[HAPPY HOUR x{HAPPY_MULTIPLIER}] "
+
+    # Ausgabe + Log
+    print(f"[{ts()}] {prefix}[{platform}] {label} | +{m} minutes")
+    log_time_add(platform, m, remaining, prefix + label)
+
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
+
+def get_current_multiplier():
+    global happy_active, happy_until
+    if happy_active and time.time() < happy_until:
+        return HAPPY_MULTIPLIER
+    return 1.0
+
 
 def handle_event(platform, data, config):
     global remaining, community_gift_groups, pending_gifted_subs
@@ -416,7 +466,8 @@ def handle_event(platform, data, config):
         elif etype == "communityGiftPurchase":
             label = f"Gift Bundle"
         elif etype == "cheer":
-            label = f"Bits"
+            bits = int(data.get("data", {}).get("amount", 0))
+            label = f"Bits ({bits})"
         elif etype == "donation":
             label = f"Donation ({amount:.2f} €)"
         elif etype == "tip":
@@ -801,6 +852,40 @@ def reset_goals():
     save_goals()
     print(f"[{ts()}] [GOALS] Gesamt-Support auf 0 zurückgesetzt")
     return jsonify({"status": "ok", "total_minutes_supported": 0.0})
+
+@app.route("/happyhour")
+def happyhour():
+    global happy_active, happy_until
+
+    # Start
+    if "start" in request.args:
+        t = int(request.args.get("time", "0"))
+        if t <= 0:
+            return jsonify({"error": "time must be > 0 minutes"}), 400
+
+        happy_active = True
+        happy_until = time.time() + (t * 60)
+
+        print(f"[{ts()}] [HAPPY] Happy Hour started for {t} minutes (x{HAPPY_MULTIPLIER})")
+        return jsonify({"status": "started", "multiplier": HAPPY_MULTIPLIER, "minutes": t})
+
+    # Stop
+    if "stop" in request.args:
+        happy_active = False
+        happy_until = 0
+        print(f"[{ts()}] [HAPPY] Happy Hour stopped")
+        return jsonify({"status": "stopped"})
+
+    # Status
+    remaining = max(0, int(happy_until - time.time()))
+    return jsonify({
+        "active": happy_active and remaining > 0,
+        "remaining_seconds": remaining,
+        "multiplier": HAPPY_MULTIPLIER
+    })
+
+
+
 # === END GOALS API ===
 
 # --------------------
