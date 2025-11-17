@@ -101,6 +101,13 @@
       text-align: center;
       margin-top: 10px;
     }
+	.happy-start {
+  background: #339933;
+}
+
+.happy-stop {
+  background: #cc3300;
+}
   </style>
 </head>
 <body>
@@ -121,15 +128,15 @@
     <button class="time-btn" onclick="send('/time?minusdelta=10')">-10 Min</button>
   </div>
   <h2>🎉 Happy Hour</h2>
-<div>
-  <button onclick="startHappyHour()">▶️ Start Happy Hour</button>
-  <button onclick="stopHappyHour()">⛔ Stop Happy Hour</button>
-</div>
-
-<div id="happyStatus" style="margin-top:10px; font-size:20px; color:#ffcc00;">
+  
+  <div id="happyStatus" style="margin-top:10px; font-size:20px; color:#ffcc00;">
   Happy Hour: nicht aktiv
 </div>
 
+<div>
+  <button class="happy-start" onclick="startHappyHour()">Start Happy Hour</button>
+  <button class="happy-stop" onclick="stopHappyHour()">Stop Happy Hour</button>
+</div>
 
   <h2>Recent Events</h2>
   <pre id="logbox">(Waiting for events...)</pre>

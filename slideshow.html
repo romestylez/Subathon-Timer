@@ -2,21 +2,27 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Subathon Rewards</title>
+  <title>Subathon Combined</title>
+
   <style>
-  @font-face {
+    @font-face {
       font-family: 'BOZART';
       src: url('fonts/BOZART.ttf') format('truetype');
-      font-weight: normal;
-      font-style: normal;
     }
-    body { background: transparent; margin: 0; overflow: hidden; }
 
+    body { 
+      background: transparent; 
+      margin: 0; 
+      overflow: hidden; 
+      font-family: Arial, sans-serif;
+    }
+
+    /* Slideshow-Stile */
     #slider {
       font-family: 'Bebas Neue', sans-serif;
       font-size: 36px;
       color: #005fa3;
-	  margin-left:5px;
+      margin-left: 5px;
       text-align: left;
       text-shadow:
         -1px -1px 0 #000,
@@ -25,7 +31,7 @@
          1px  1px 0 #000;
       position: relative;
       width: 100%;
-      height: 100px; /* fixed height for smooth transitions */
+      height: 100px;
       overflow: hidden;
     }
 
@@ -55,50 +61,255 @@
       from { opacity: 1; transform: translateX(0); }
       to   { opacity: 0; transform: translateX(-30px); }
     }
+
+    /* ======= Goal styles unverändert ======= */
+    #goalsBox {
+      padding: 10px 15px;
+      text-align: left;
+      color: #ffcc00;
+    }
+
+    .headline {
+      color: #ffcc00;
+      font-weight: bold;
+      margin-bottom: 5px;
+      font-size: 17px;
+      display: inline-block;
+    }
+
+    .divider {
+      border-top: 1px solid #005fa3;
+      margin: 4px 0 6px 0;
+      display: block;
+    }
+
+    .goal-line {
+      color: #ffcc00;
+      display: inline-block;
+    }
+
+    .goal-line.reached {
+      color: #6aff6a;
+    }
+
+    /* ======= Slide-Effekt für Goals ======= */
+    #section_goals {
+      opacity: 0;
+      transform: translateX(30px);
+      position: absolute;
+      width: 100%;
+      top: 0;
+    }
+
+    #section_goals.active {
+      animation: slideIn 1.2s ease forwards;
+    }
+
+    #section_goals.exit {
+      animation: slideOut 1.2s ease forwards;
+    }
+
+    #section_slideshow {
+      opacity: 0;
+      transform: translateX(30px);
+      position: absolute;
+      width: 100%;
+      top: 0;
+    }
+
+    #section_slideshow.active {
+      animation: slideIn 1.2s ease forwards;
+    }
+
+    #section_slideshow.exit {
+      animation: slideOut 1.2s ease forwards;
+    }
+
   </style>
+
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div id="slider"></div>
 
-  <script>
-    const urlParams = new URLSearchParams(window.location.search);
-    const streamer = urlParams.get("streamer") || "1";
-    const slider = document.getElementById("slider");
+  <!-- Slideshow -->
+  <div id="section_slideshow">
+    <div id="slider"></div>
+  </div>
 
-    fetch(`http://localhost:5000/rewards?streamer=${streamer}`)
-      .then(r => r.json())
-      .then(rewards => {
-        rewards.forEach(r => {
-          const div = document.createElement("div");
-          div.innerHTML = `<b>${r.name}</b><br>${r.minutes} Minuten`;
-          slider.appendChild(div);
+  <!-- Goals -->
+  <div id="section_goals">
+    <div id="goalsBox">Lade Ziele...</div>
+  </div>
+
+<script>
+
+const BASE = "http://localhost:5000";
+
+/* ===========================================================
+   SLIDESHOW
+   =========================================================== */
+function loadSlideshow() {
+  const slider = document.getElementById("slider");
+
+  // WICHTIG: Reset aller Slides vorher entfernen
+  slider.innerHTML = "";
+
+  return fetch(`${BASE}/rewards`)
+    .then(r => r.json())
+    .then(rewards => {
+
+      // Neue Slides frisch aufbauen
+      rewards.forEach(r => {
+        const div = document.createElement("div");
+        div.innerHTML = `<b>${r.name}</b><br>${r.minutes} Minuten`;
+        slider.appendChild(div);
+      });
+
+      const slides = slider.querySelectorAll("div");
+      let current = 0;
+
+      return new Promise(resolve => {
+
+        if (slides.length === 0) return resolve();
+
+        // SAUBERER Start: erstes Slide sichtbar machen
+        slides.forEach(s => {
+          s.classList.remove("active", "exit");
+          s.style.opacity = 0;
+          s.style.transform = "translateX(30px)";
         });
 
-        const slides = slider.querySelectorAll("div");
-        let current = 0;
-        function showSlide() {
-          const prev = slides[current];
-          current = (current + 1) % slides.length;
-          const next = slides[current];
+        slides[0].classList.add("active");
 
-          if (prev) {
-            prev.classList.remove("active");
-            prev.classList.add("exit");
-            prev.addEventListener("animationend", () => {
-              prev.classList.remove("exit");
-              prev.style.opacity = 0;
-            }, { once: true });
+        let interval = setInterval(() => {
+          const prev = slides[current];
+          current++;
+
+          // → Wenn ALLE Slides einmal durch sind
+          if (current >= slides.length) {
+            clearInterval(interval);
+            return resolve();  // Fertig → Goals anzeigen
           }
 
-          next.classList.add("active");
-        }
+          const next = slides[current];
 
-        if (slides.length > 0) {
-          slides[0].classList.add("active");
-          setInterval(showSlide, 6000); // switch every 4s
-        }
+          prev.classList.remove("active");
+          prev.classList.add("exit");
+
+          next.classList.add("active");
+
+        }, 6000);
       });
-  </script>
+    });
+}
+
+
+/* ===========================================================
+   GOALS
+   =========================================================== */
+function loadGoals() {
+  return fetch(`${BASE}/goals`)
+    .then(r => r.json())
+    .then(data => {
+      const box = document.getElementById("goalsBox");
+
+      const totalMinutes = Number(data.total_minutes_supported || 0);
+      const goals = Array.isArray(data.goals) ? data.goals : [];
+
+      let hours = Math.floor(totalMinutes / 60);
+      let minutes = Math.round(totalMinutes % 60);
+      if (minutes === 60) { hours++; minutes = 0; }
+
+      let headerText = `Gesamt Support: ${hours} Stunden ${minutes} Minuten`;
+
+      let html = `
+        <div class="headline">${headerText}</div>
+        <div class="divider"></div>
+      `;
+
+      goals.forEach(g => {
+        const reached = !!g.reached;
+        html += `
+          <div class="goal-line ${reached ? "reached" : ""}">
+            ${reached ? "✅" : "⏳"} ${g.hours} Stunden – ${g.title}
+          </div><br>
+        `;
+      });
+
+      box.innerHTML = html;
+
+      // Divider automatisch anpassen
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      ctx.font = "17px Arial";
+
+      let textWidth = ctx.measureText(headerText).width;
+
+      const divider = box.querySelector(".divider");
+      divider.style.width = Math.ceil(textWidth + 30) + "px";
+    });
+}
+
+/* ===========================================================
+   ROTATION MIT SLIDE ANIMATION
+   =========================================================== */
+async function startRotation() {
+
+  const secSlide = document.getElementById("section_slideshow");
+  const secGoals = document.getElementById("section_goals");
+
+  while (true) {
+
+    /* ---------------------------
+       1) SLIDESHOW STARTEN
+       --------------------------- */
+
+    // Reset, damit Animation wieder funktioniert
+    secSlide.classList.remove("active", "exit");
+    secSlide.style.opacity = 0;
+    secSlide.style.transform = "translateX(30px)";
+
+    // Slideshow einblenden
+    secSlide.classList.add("active");
+
+    await loadSlideshow();
+
+    // Slideshow ausblenden
+    secSlide.classList.remove("active");
+    secSlide.classList.add("exit");
+
+    await new Promise(r => setTimeout(r, 1200));  // SlideOut fertig
+
+
+
+    /* ---------------------------
+       2) GOALS STARTEN
+       --------------------------- */
+
+    await loadGoals();
+
+    // Reset Goals, damit Animation neu startet
+    secGoals.classList.remove("active", "exit");
+    secGoals.style.opacity = 0;
+    secGoals.style.transform = "translateX(30px)";
+
+    // Goals einblenden
+    secGoals.classList.add("active");
+
+    await new Promise(r => setTimeout(r, 10000)); // 10 Sekunden anzeigen
+
+    // Goals ausblenden
+    secGoals.classList.remove("active");
+    secGoals.classList.add("exit");
+
+    await new Promise(r => setTimeout(r, 1200));  // SlideOut fertig
+  }
+}
+
+
+startRotation();
+
+</script>
+
 </body>
 </html>
