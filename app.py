@@ -711,6 +711,51 @@ def start_tipeee(name, api_key, config):
 # --------------------
 # Flask routes
 # --------------------
+@app.route("/goals/add")
+def add_goal():
+    global goals_data
+
+    # priorisiere raw-Parameter (für Streamer.bot)
+    raw = request.args.get("raw")
+    hours_param = request.args.get("hours")
+    title_param = request.args.get("title")
+
+    try:
+        # Fall 1: Streamer.bot ruft "rawInput" auf
+        if raw:
+            raw = raw.strip()
+            parts = raw.split(" ", 1)
+            if len(parts) < 2:
+                return jsonify({"error": "Format needed: '<hours> <title>'"}), 400
+            hours = float(parts[0])
+            title = parts[1].strip()
+
+        # Fall 2: klassische hours= & title= API
+        elif hours_param and title_param:
+            hours = float(hours_param)
+            title = title_param.strip()
+
+        else:
+            return jsonify({"error": "Provide either ?raw= or ?hours=&title="}), 400
+
+        # Goal anlegen
+        new_goal = {
+            "hours": hours,
+            "title": title,
+            "reached": False
+        }
+
+        goals_data["goals"].append(new_goal)
+        save_goals()
+
+        print(f"[{ts()}] [GOALS] Added goal {hours}h – {title}")
+        return jsonify({"status": "ok", "goal": new_goal})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 @app.route("/")
 def index():
     return "Subathon timer is running!"
