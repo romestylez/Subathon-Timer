@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Time Add</title>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+    font-family: Arial, sans-serif;
+}
+
+/* ----------------------------------------------
+   ECHTE SPRECHBLASENFORM (dein SVG als Maske)
+---------------------------------------------- */
+#box {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: none;
+
+    background: rgba(60, 60, 60, 0.45);
+    color: white;
+
+    padding: 18px 30px 22px 30px;
+
+    font-weight: bold;
+    width: fit-content;
+    white-space: nowrap;
+
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+
+    -webkit-mask-image: url("bubble.svg");
+    mask-image: url("bubble.svg");
+
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+}
+
+/* Text-Optimierung */
+.line {
+    font-size: 16px;
+    color: #2ecc71;
+    margin: 0;
+    margin-bottom: 4px;
+    text-align: center;
+    font-weight: 600;
+}
+
+.time {
+    font-size: 20px;
+    color: #2ecc71;
+    margin: 0;
+    text-align: center;
+    font-weight: 700;
+}
+
+/* ANIMATIONEN */
+.fadeIn {
+    animation: fadeIn 0.3s ease forwards;
+}
+
+.fadeOut {
+    animation: fadeOut 0.4s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-6px) scale(0.97); }
+}
+</style>
+
+</head>
+<body>
+
+<div id="box">
+  <div id="event" class="line"></div>
+  <div id="minutes" class="time"></div>
+</div>
+
+<script>
+const socket = io("http://localhost:5000");
+
+/* QUEUE */
+let eventQueue = [];
+let isShowing = false;
+const SHOW_TIME = 3500;
+
+function showNext() {
+    if (isShowing) return;
+    if (eventQueue.length === 0) return;
+
+    const data = eventQueue.shift();
+    isShowing = true;
+
+    showEvent(data);
+
+    setTimeout(() => {
+        hideEvent(() => {
+            isShowing = false;
+            showNext();
+        });
+    }, SHOW_TIME);
+}
+
+function showEvent(data) {
+    const label = data.label || "";
+    const minutes = data.minutes || 0;
+
+    let icon = "🎁";
+    let line = "";
+
+    if (/Gift Bundle/i.test(label)) {
+        const m = label.match(/\((\d+)\)/);
+        const count = m ? parseInt(m[1], 10) : 1;
+        line = `${count} Gifted Subs`;
+    }
+    else if (/Sub/i.test(label)) {
+        line = "1 Sub";
+    }
+    else if (/Bits/i.test(label)) {
+        let amt = "?";
+
+        let m1 = label.match(/\((\d+)\)/);
+        let m2 = label.match(/SoundAlerts\s+(\d+)\s*Bits/i);
+
+        if (m1) amt = m1[1];
+        else if (m2) amt = m2[1];
+
+        icon = "💎";
+        line = `${amt} Bits`;
+    }
+    else if (/Donation|Tip|€/i.test(label)) {
+        const m = label.match(/(\d+(\.\d+)?)/);
+        let amt = m ? parseFloat(m[1]) : null;
+
+        icon = "💶";
+        line = amt === null
+            ? "? €"
+            : (Number.isInteger(amt)
+                ? `${amt} €`
+                : `${amt.toFixed(2).replace(".00", "")} €`);
+    }
+
+    const mm = String(minutes % 60).padStart(2, "0");
+    const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+
+    document.getElementById("event").innerHTML = `${icon} ${line}`;
+    document.getElementById("minutes").innerHTML = `${hh}:${mm}`;
+
+    const box = document.getElementById("box");
+    box.classList.remove("fadeOut");
+    box.style.display = "block";
+    box.classList.add("fadeIn");
+}
+
+function hideEvent(callback) {
+    const box = document.getElementById("box");
+    box.classList.remove("fadeIn");
+    box.classList.add("fadeOut");
+    setTimeout(() => {
+        box.style.display = "none";
+        callback();
+    }, 400);
+}
+
+socket.on("time_added", data => {
+    eventQueue.push(data);
+    showNext();
+});
+</script>
+
+</body>
+</html>

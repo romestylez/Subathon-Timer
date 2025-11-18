@@ -334,6 +334,15 @@ def apply_minutes(platform, minutes_to_add, label):
     log_time_add(platform, m, remaining, prefix + label)
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
+    
+    # -------------------------------------
+    # NEU: Live Event für time_add.html
+    # -------------------------------------
+    socketio.emit("time_added", {
+        "platform": platform,
+        "label": label,     # z.B. "Gift Bundle", "T1 Sub", "Bits (300)"
+        "minutes": float(m) # z.B. 12.0
+    })
 
 def get_current_multiplier():
     global happy_active, happy_until
@@ -884,6 +893,149 @@ def happyhour():
         "multiplier": HAPPY_MULTIPLIER
     })
 
+# --------------------
+# Fake Test Events
+# --------------------
+@app.route("/fake/soundalerts")
+def fake_soundalerts():
+    user = request.args.get("user", "Tester")
+    alert = request.args.get("alert", "Sound")
+    bits = int(request.args.get("bits", "100"))
+
+    platform = "FAKE-SoundAlerts"
+
+    # Minuten wie echte SoundAlerts berechnen – aber NICHT anwenden!
+    minutes = round((bits / 100.0) * float(CONFIG1["twitch"]["bits_per_100"]), 2)
+
+    label = f"SoundAlerts {bits} Bits"
+
+    # NICHT: handle_event(...)
+    # Nur: direkt an time_add.html senden
+    socketio.emit("time_added", {
+        "platform": platform,
+        "label": label,
+        "minutes": minutes
+    })
+
+    print(f"[FAKE] {label} | +{minutes} minutes (NO TIMER CHANGE)")
+    return jsonify({"ok": True, "label": label, "minutes": minutes})
+
+
+
+@app.route("/fake/gift")
+def fake_gift():
+    try:
+        count = int(request.args.get("count", "1"))
+        tier = request.args.get("tier", "1")
+    except:
+        return jsonify({"error": "count must be number"}), 400
+
+    platform = "FAKE-Gift"
+
+    # Minuten pro Sub anhand deiner CONFIG
+    if tier == "1":
+        per_sub = CONFIG1["twitch"]["sub_t1"]
+    elif tier == "2":
+        per_sub = CONFIG1["twitch"]["sub_t2"]
+    elif tier == "3":
+        per_sub = CONFIG1["twitch"]["sub_t3"]
+    else:
+        per_sub = CONFIG1["twitch"]["sub_t1"]
+
+    minutes = round(per_sub * count, 2)
+
+    # Label exakt so wie echte Events
+    label = f"Gift Bundle ({count})"
+
+    # Popup auslösen
+    socketio.emit("time_added", {
+        "platform": platform,
+        "label": label,     # z.B. "Gift Bundle (5)"
+        "minutes": minutes  # Minuten die addiert würden
+    })
+
+    print(f"[FAKE] {label} | +{minutes} minutes")
+
+    return jsonify({
+        "ok": True,
+        "label": label,
+        "count": count,
+        "tier": tier,
+        "minutes": minutes
+    })
+
+@app.route("/fake/sub")
+def fake_sub():
+    tier = request.args.get("tier", "1")
+    platform = "FAKE-Twitch"
+
+    # Minuten anhand deiner Config bestimmen
+    if tier == "1":
+        minutes = CONFIG1["twitch"]["sub_t1"]
+        label = "T1 Sub"
+    elif tier == "2":
+        minutes = CONFIG1["twitch"]["sub_t2"]
+        label = "T2 Sub"
+    elif tier == "3":
+        minutes = CONFIG1["twitch"]["sub_t3"]
+        label = "T3 Sub"
+    else:
+        return jsonify({"error": "invalid tier"}), 400
+
+    # Nur anzeigen – nicht den echten Timer verändern
+    socketio.emit("time_added", {
+        "platform": platform,
+        "label": label,
+        "minutes": minutes
+    })
+
+    print(f"[FAKE] {label} | +{minutes} minutes")
+    return jsonify({"ok": True, "label": label, "minutes": minutes})
+
+
+@app.route("/fake/bits")
+def fake_bits():
+    amount = int(request.args.get("amount", "100"))
+    platform = "FAKE-Bits"
+
+    minutes = (amount / 100.0) * CONFIG1["twitch"]["bits_per_100"]
+    minutes = round(minutes, 2)
+
+    label = f"Bits ({amount})"
+
+    socketio.emit("time_added", {
+        "platform": platform,
+        "label": label,
+        "minutes": minutes
+    })
+
+    print(f"[FAKE] {label} | +{minutes} minutes")
+    return jsonify({"ok": True, "label": label, "minutes": minutes})
+
+
+@app.route("/fake/euro")
+def fake_euro():
+    amount = float(request.args.get("amount", "1"))
+    platform = "FAKE-Euro"
+
+    # Tipeee oder StreamElements → beide erlaubt
+    if "tipeee" in CONFIG1:
+        minutes = amount * CONFIG1["tipeee"]["minutes_per_eur"]
+    else:
+        minutes = amount * CONFIG1["streamelements"]["minutes_per_eur"]
+
+    minutes = round(minutes, 2)
+
+    label = f"Donation ({amount} €)"
+
+    socketio.emit("time_added", {
+        "platform": platform,
+        "label": label,
+        "minutes": minutes
+    })
+
+    print(f"[FAKE] {label} | +{minutes} minutes")
+    return jsonify({"ok": True, "label": label, "minutes": minutes})
 
 
 # === END GOALS API ===
