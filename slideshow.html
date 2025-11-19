@@ -5,6 +5,10 @@
   <title>Subathon Combined</title>
 
   <style>
+    html.prestart * {
+    animation: none !important;
+    transition: none !important;
+}
     @font-face {
       font-family: 'BOZART';
       src: url('fonts/BOZART.ttf') format('truetype');
@@ -22,7 +26,8 @@
       font-family: 'Bebas Neue', sans-serif;
       font-size: 36px;
       color: #005fa3;
-      margin-left: 5px;
+      padding-left: 10px;
+box-sizing: border-box;
       text-align: left;
       text-shadow:
         -1px -1px 0 #000,
@@ -64,7 +69,7 @@
 
     /* ======= Goal styles unverändert ======= */
     #goalsBox {
-      padding: 10px 15px;
+      padding: 10px 10px;
       text-align: left;
       color: #ffcc00;
     }
@@ -142,6 +147,8 @@
   </div>
 
 <script>
+// Blockiere Animationen global
+document.documentElement.classList.add("prestart");
 
 // streamer=1 oder streamer=2
 const params = new URLSearchParams(window.location.search);
@@ -152,6 +159,7 @@ const REWARDS_URL = `http://localhost:5000/rewards?streamer=${streamer}`;
 
 // Goals API für beide gleich:
 const GOALS_URL = "http://localhost:5000/goals";
+
 
 /* ===========================================================
    SLIDESHOW
@@ -206,6 +214,7 @@ function loadSlideshow() {
     });
 }
 
+
 /* ===========================================================
    GOALS
    =========================================================== */
@@ -244,9 +253,7 @@ function loadGoals() {
       ctx.font = "17px Arial";
 
       let textWidth = ctx.measureText(headerText).width;
-
-      const divider = box.querySelector(".divider");
-      divider.style.width = Math.ceil(textWidth + 30) + "px";
+      box.querySelector(".divider").style.width = Math.ceil(textWidth + 30) + "px";
     });
 }
 
@@ -272,7 +279,6 @@ async function startRotation() {
     secSlide.classList.add("exit");
     await new Promise(r => setTimeout(r, 1200));
 
-
     await loadGoals();
 
     secGoals.classList.remove("active", "exit");
@@ -288,11 +294,57 @@ async function startRotation() {
   }
 }
 
-startRotation();
 
+/* ===========================================================
+   OBS FIX — RECHTSCHNITT BUG
+   =========================================================== */
+function forceReflow() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.body.style.display = "none";
+        void document.body.offsetHeight; // Trigger Reflow
+        document.body.style.display = "";
+        resolve();
+      });
+    });
+  });
+}
+
+async function waitForFonts() {
+  if (document.fonts && document.fonts.ready) {
+    await document.fonts.ready;
+  } else {
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+async function waitForLayout() {
+  return new Promise(resolve => {
+    function check() {
+      if (document.body.clientWidth > 10 &&
+          document.getElementById("slider").clientWidth > 10) {
+        resolve();
+      } else {
+        requestAnimationFrame(check);
+      }
+    }
+    check();
+  });
+}
+
+async function safeStart() {
+  await waitForFonts();
+  await waitForLayout();
+  await forceReflow();
+
+  document.documentElement.classList.remove("prestart");
+
+  startRotation();
+}
+
+safeStart();
 </script>
-
-
 
 
 </body>
