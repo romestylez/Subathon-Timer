@@ -5,6 +5,10 @@
   <title>Subathon Combined</title>
 
   <style>
+    html.prestart * {
+    animation: none !important;
+    transition: none !important;
+}
     @font-face {
       font-family: 'BOZART';
       src: url('fonts/BOZART.ttf') format('truetype');
@@ -22,7 +26,8 @@
       font-family: 'Bebas Neue', sans-serif;
       font-size: 36px;
       color: #005fa3;
-      margin-left: 5px;
+      padding-left: 10px;
+box-sizing: border-box;
       text-align: left;
       text-shadow:
         -1px -1px 0 #000,
@@ -64,7 +69,7 @@
 
     /* ======= Goal styles unverändert ======= */
     #goalsBox {
-      padding: 10px 15px;
+      padding: 10px 10px;
       text-align: left;
       color: #ffcc00;
     }
@@ -142,23 +147,31 @@
   </div>
 
 <script>
+// Blockiere Animationen global
+document.documentElement.classList.add("prestart");
 
-const BASE = "http://localhost:5000";
+// streamer=1 oder streamer=2
+const params = new URLSearchParams(window.location.search);
+const streamer = params.get("streamer") || "1";
+
+// Rewards API wie früher:
+const REWARDS_URL = `http://localhost:5000/rewards?streamer=${streamer}`;
+
+// Goals API für beide gleich:
+const GOALS_URL = "http://localhost:5000/goals";
+
 
 /* ===========================================================
    SLIDESHOW
    =========================================================== */
 function loadSlideshow() {
   const slider = document.getElementById("slider");
-
-  // WICHTIG: Reset aller Slides vorher entfernen
   slider.innerHTML = "";
 
-  return fetch(`${BASE}/rewards`)
+  return fetch(REWARDS_URL)
     .then(r => r.json())
     .then(rewards => {
 
-      // Neue Slides frisch aufbauen
       rewards.forEach(r => {
         const div = document.createElement("div");
         div.innerHTML = `<b>${r.name}</b><br>${r.minutes} Minuten`;
@@ -172,7 +185,6 @@ function loadSlideshow() {
 
         if (slides.length === 0) return resolve();
 
-        // SAUBERER Start: erstes Slide sichtbar machen
         slides.forEach(s => {
           s.classList.remove("active", "exit");
           s.style.opacity = 0;
@@ -185,10 +197,9 @@ function loadSlideshow() {
           const prev = slides[current];
           current++;
 
-          // → Wenn ALLE Slides einmal durch sind
           if (current >= slides.length) {
             clearInterval(interval);
-            return resolve();  // Fertig → Goals anzeigen
+            return resolve();
           }
 
           const next = slides[current];
@@ -208,7 +219,7 @@ function loadSlideshow() {
    GOALS
    =========================================================== */
 function loadGoals() {
-  return fetch(`${BASE}/goals`)
+  return fetch(GOALS_URL)
     .then(r => r.json())
     .then(data => {
       const box = document.getElementById("goalsBox");
@@ -228,30 +239,27 @@ function loadGoals() {
       `;
 
       goals.forEach(g => {
-        const reached = !!g.reached;
         html += `
-          <div class="goal-line ${reached ? "reached" : ""}">
-            ${reached ? "✅" : "⏳"} ${g.hours} Stunden – ${g.title}
+          <div class="goal-line ${g.reached ? "reached" : ""}">
+            ${g.reached ? "✅" : "⏳"} ${g.hours} Stunden – ${g.title}
           </div><br>
         `;
       });
 
       box.innerHTML = html;
 
-      // Divider automatisch anpassen
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       ctx.font = "17px Arial";
 
       let textWidth = ctx.measureText(headerText).width;
-
-      const divider = box.querySelector(".divider");
-      divider.style.width = Math.ceil(textWidth + 30) + "px";
+      box.querySelector(".divider").style.width = Math.ceil(textWidth + 30) + "px";
     });
 }
 
+
 /* ===========================================================
-   ROTATION MIT SLIDE ANIMATION
+   ROTATION
    =========================================================== */
 async function startRotation() {
 
@@ -260,56 +268,84 @@ async function startRotation() {
 
   while (true) {
 
-    /* ---------------------------
-       1) SLIDESHOW STARTEN
-       --------------------------- */
-
-    // Reset, damit Animation wieder funktioniert
     secSlide.classList.remove("active", "exit");
     secSlide.style.opacity = 0;
     secSlide.style.transform = "translateX(30px)";
-
-    // Slideshow einblenden
     secSlide.classList.add("active");
 
     await loadSlideshow();
 
-    // Slideshow ausblenden
     secSlide.classList.remove("active");
     secSlide.classList.add("exit");
-
-    await new Promise(r => setTimeout(r, 1200));  // SlideOut fertig
-
-
-
-    /* ---------------------------
-       2) GOALS STARTEN
-       --------------------------- */
+    await new Promise(r => setTimeout(r, 1200));
 
     await loadGoals();
 
-    // Reset Goals, damit Animation neu startet
     secGoals.classList.remove("active", "exit");
     secGoals.style.opacity = 0;
     secGoals.style.transform = "translateX(30px)";
-
-    // Goals einblenden
     secGoals.classList.add("active");
 
-    await new Promise(r => setTimeout(r, 10000)); // 10 Sekunden anzeigen
+    await new Promise(r => setTimeout(r, 10000));
 
-    // Goals ausblenden
     secGoals.classList.remove("active");
     secGoals.classList.add("exit");
-
-    await new Promise(r => setTimeout(r, 1200));  // SlideOut fertig
+    await new Promise(r => setTimeout(r, 1200));
   }
 }
 
 
-startRotation();
+/* ===========================================================
+   OBS FIX — RECHTSCHNITT BUG
+   =========================================================== */
+function forceReflow() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.body.style.display = "none";
+        void document.body.offsetHeight; // Trigger Reflow
+        document.body.style.display = "";
+        resolve();
+      });
+    });
+  });
+}
 
+async function waitForFonts() {
+  if (document.fonts && document.fonts.ready) {
+    await document.fonts.ready;
+  } else {
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+async function waitForLayout() {
+  return new Promise(resolve => {
+    function check() {
+      if (document.body.clientWidth > 10 &&
+          document.getElementById("slider").clientWidth > 10) {
+        resolve();
+      } else {
+        requestAnimationFrame(check);
+      }
+    }
+    check();
+  });
+}
+
+async function safeStart() {
+  await waitForFonts();
+  await waitForLayout();
+  await forceReflow();
+
+  document.documentElement.classList.remove("prestart");
+
+  startRotation();
+}
+
+safeStart();
 </script>
+
 
 </body>
 </html>
