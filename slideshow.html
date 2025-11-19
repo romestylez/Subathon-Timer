@@ -143,22 +143,27 @@
 
 <script>
 
-const BASE = "http://localhost:5000";
+// streamer=1 oder streamer=2
+const params = new URLSearchParams(window.location.search);
+const streamer = params.get("streamer") || "1";
+
+// Rewards API wie früher:
+const REWARDS_URL = `http://localhost:5000/rewards?streamer=${streamer}`;
+
+// Goals API für beide gleich:
+const GOALS_URL = "http://localhost:5000/goals";
 
 /* ===========================================================
    SLIDESHOW
    =========================================================== */
 function loadSlideshow() {
   const slider = document.getElementById("slider");
-
-  // WICHTIG: Reset aller Slides vorher entfernen
   slider.innerHTML = "";
 
-  return fetch(`${BASE}/rewards`)
+  return fetch(REWARDS_URL)
     .then(r => r.json())
     .then(rewards => {
 
-      // Neue Slides frisch aufbauen
       rewards.forEach(r => {
         const div = document.createElement("div");
         div.innerHTML = `<b>${r.name}</b><br>${r.minutes} Minuten`;
@@ -172,7 +177,6 @@ function loadSlideshow() {
 
         if (slides.length === 0) return resolve();
 
-        // SAUBERER Start: erstes Slide sichtbar machen
         slides.forEach(s => {
           s.classList.remove("active", "exit");
           s.style.opacity = 0;
@@ -185,10 +189,9 @@ function loadSlideshow() {
           const prev = slides[current];
           current++;
 
-          // → Wenn ALLE Slides einmal durch sind
           if (current >= slides.length) {
             clearInterval(interval);
-            return resolve();  // Fertig → Goals anzeigen
+            return resolve();
           }
 
           const next = slides[current];
@@ -203,12 +206,11 @@ function loadSlideshow() {
     });
 }
 
-
 /* ===========================================================
    GOALS
    =========================================================== */
 function loadGoals() {
-  return fetch(`${BASE}/goals`)
+  return fetch(GOALS_URL)
     .then(r => r.json())
     .then(data => {
       const box = document.getElementById("goalsBox");
@@ -228,17 +230,15 @@ function loadGoals() {
       `;
 
       goals.forEach(g => {
-        const reached = !!g.reached;
         html += `
-          <div class="goal-line ${reached ? "reached" : ""}">
-            ${reached ? "✅" : "⏳"} ${g.hours} Stunden – ${g.title}
+          <div class="goal-line ${g.reached ? "reached" : ""}">
+            ${g.reached ? "✅" : "⏳"} ${g.hours} Stunden – ${g.title}
           </div><br>
         `;
       });
 
       box.innerHTML = html;
 
-      // Divider automatisch anpassen
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       ctx.font = "17px Arial";
@@ -250,8 +250,9 @@ function loadGoals() {
     });
 }
 
+
 /* ===========================================================
-   ROTATION MIT SLIDE ANIMATION
+   ROTATION
    =========================================================== */
 async function startRotation() {
 
@@ -260,56 +261,39 @@ async function startRotation() {
 
   while (true) {
 
-    /* ---------------------------
-       1) SLIDESHOW STARTEN
-       --------------------------- */
-
-    // Reset, damit Animation wieder funktioniert
     secSlide.classList.remove("active", "exit");
     secSlide.style.opacity = 0;
     secSlide.style.transform = "translateX(30px)";
-
-    // Slideshow einblenden
     secSlide.classList.add("active");
 
     await loadSlideshow();
 
-    // Slideshow ausblenden
     secSlide.classList.remove("active");
     secSlide.classList.add("exit");
+    await new Promise(r => setTimeout(r, 1200));
 
-    await new Promise(r => setTimeout(r, 1200));  // SlideOut fertig
-
-
-
-    /* ---------------------------
-       2) GOALS STARTEN
-       --------------------------- */
 
     await loadGoals();
 
-    // Reset Goals, damit Animation neu startet
     secGoals.classList.remove("active", "exit");
     secGoals.style.opacity = 0;
     secGoals.style.transform = "translateX(30px)";
-
-    // Goals einblenden
     secGoals.classList.add("active");
 
-    await new Promise(r => setTimeout(r, 10000)); // 10 Sekunden anzeigen
+    await new Promise(r => setTimeout(r, 10000));
 
-    // Goals ausblenden
     secGoals.classList.remove("active");
     secGoals.classList.add("exit");
-
-    await new Promise(r => setTimeout(r, 1200));  // SlideOut fertig
+    await new Promise(r => setTimeout(r, 1200));
   }
 }
-
 
 startRotation();
 
 </script>
+
+
+
 
 </body>
 </html>
