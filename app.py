@@ -302,47 +302,42 @@ def check_pending_gift(activity_group):
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
-
-
-def apply_minutes(platform, minutes_to_add, label):
-    """Helper to apply minutes, log and emit."""
+def apply_minutes(platform, minutes_to_add, label, username=""):
+    """Helper to apply minutes, log, emit including username."""
     if minutes_to_add <= 0:
         return
 
-    # apply Happy Hour multiplier (NOT for manual additions)
+    # Happy Hour
     multiplier = get_current_multiplier()
     if multiplier != 1.0:
         minutes_to_add = minutes_to_add * multiplier
 
     with lock:
         global remaining
-        remaining += int(round(minutes_to_add * 60))  # round up to seconds
+        remaining += int(round(minutes_to_add * 60))
         save_state()
         new_state = {"remaining": remaining, "paused": paused}
 
     add_support_minutes(minutes_to_add)
     m = fmt_minutes(minutes_to_add)
 
-
-    # Prefix bauen, wenn Happy Hour aktiv ist
     prefix = ""
     if get_current_multiplier() != 1.0:
         prefix = f"[HAPPY HOUR x{HAPPY_MULTIPLIER}] "
 
-    # Ausgabe + Log
-    print(f"[{ts()}] {prefix}[{platform}] {label} | +{m} minutes")
+    print(f"[{ts()}] {prefix}[{platform}] {label} | +{m} minutes (by {username})")
     log_time_add(platform, m, remaining, prefix + label)
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
-    
-    # -------------------------------------
-    # NEU: Live Event für time_add.html
-    # -------------------------------------
+
+    # popup fürs Overlay
     socketio.emit("time_added", {
         "platform": platform,
-        "label": label,     # z.B. "Gift Bundle", "T1 Sub", "Bits (300)"
-        "minutes": float(m) # z.B. 12.0
+        "label": label,
+        "minutes": float(m),
+        "username": username
     })
+    
 
 def get_current_multiplier():
     global happy_active, happy_until
@@ -353,6 +348,33 @@ def get_current_multiplier():
 
 def handle_event(platform, data, config):
     global remaining, community_gift_groups, pending_gifted_subs
+
+    # ------------------------
+    # 🎯 USERNAME-EXTRAKTION
+    # ------------------------
+    username = None
+
+    # StreamElements activities
+    if "data" in data:
+        d = data["data"]
+        if isinstance(d, dict):
+            username = d.get("username") or d.get("sender") or d.get("user")
+
+    # SoundAlerts Chat (IRC)
+    if username is None and data.get("type") == "message":
+        # Beispiel: "Losty löst SoundXY mit 50 Bits aus"
+        m = re.search(r"^(.+?)\s+löst\s+", data.get("data", {}).get("text", ""))
+        if m:
+            username = m.group(1)
+
+    # Kick Chat
+    if username is None and "nickname" in data:
+        username = data["nickname"]
+
+    # Fallback
+    if username is None:
+        username = ""
+        
     minutes_to_add = 0.0
 
     # RAW event to logfile + optional console
@@ -390,7 +412,7 @@ def handle_event(platform, data, config):
             # Platform label: replace "-IRC" with "-SoundAlerts" to keep logs clean
             nice_platform = platform.replace("-IRC", "-SoundAlerts")
 
-            apply_minutes(nice_platform, minutes_to_add, f"SoundAlerts {bits} Bits")
+            apply_minutes(nice_platform, minutes_to_add, f"SoundAlerts {bits} Bits", username=username)
 
             return  # handled
 
@@ -486,7 +508,7 @@ def handle_event(platform, data, config):
         else:
             label = etype.capitalize()
 
-        apply_minutes(platform, float(minutes_to_add), label)
+        apply_minutes(platform, float(minutes_to_add), label, username=username)
 
 # --------------------
 # StreamElements WS with auto-reconnect (activities only)

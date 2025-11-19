@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Time Add</title>
+<title>Time Add – Scroll</title>
 
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
@@ -14,169 +14,189 @@ body {
     font-family: Arial, sans-serif;
 }
 
-/* ----------------------------------------------
-   ECHTE SPRECHBLASENFORM (dein SVG als Maske)
----------------------------------------------- */
-#box {
+.scrolling-words-container {
     position: absolute;
     top: 10px;
     left: 10px;
     display: none;
-
-    background: rgba(60, 60, 60, 0.45);
-    color: white;
-
-    padding: 18px 30px 22px 30px;
-
-    font-weight: bold;
-    width: fit-content;
-    white-space: nowrap;
-
-    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-
-    -webkit-mask-image: url("bubble.svg");
-    mask-image: url("bubble.svg");
-
-    -webkit-mask-size: 100% 100%;
-    mask-size: 100% 100%;
-}
-
-/* Text-Optimierung */
-.line {
-    font-size: 16px;
-    color: #2ecc71;
-    margin: 0;
-    margin-bottom: 4px;
-    text-align: center;
+    align-items: center;
+    font-size: 20px;
     font-weight: 600;
 }
 
-.time {
-    font-size: 20px;
-    color: #2ecc71;
+.scrolling-words-box {
+    height: 48px;
+    overflow: hidden;
+}
+
+#scroll-list {
     margin: 0;
-    text-align: center;
-    font-weight: 700;
+    padding: 0;
+    transform: translateY(0);
+    transition: transform 0.6s ease-out;
 }
 
-/* ANIMATIONEN */
-.fadeIn {
-    animation: fadeIn 0.3s ease forwards;
-}
-
-.fadeOut {
-    animation: fadeOut 0.4s ease forwards;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes fadeOut {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to   { opacity: 0; transform: translateY(-6px) scale(0.97); }
+#scroll-list li {
+    list-style: none;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    color: #ffcc00;
+    white-space: nowrap;
+    text-shadow: 0 0 3px #000;
 }
 </style>
-
 </head>
 <body>
 
-<div id="box">
-  <div id="event" class="line"></div>
-  <div id="minutes" class="time"></div>
+<div class="scrolling-words-container" id="scroll-container">
+  <div class="scrolling-words-box">
+    <ul id="scroll-list"></ul>
+  </div>
 </div>
 
 <script>
 const socket = io("http://localhost:5000");
 
-/* QUEUE */
-let eventQueue = [];
-let isShowing = false;
-const SHOW_TIME = 3500;
+const container = document.getElementById("scroll-container");
+const ul        = document.getElementById("scroll-list");
 
-function showNext() {
-    if (isShowing) return;
-    if (eventQueue.length === 0) return;
+const SHOW_MS       = 4000;
+const SCROLL_MS     = 600;
+const IDLE_HIDE_MS  = 8000;
+const ITEM_HEIGHT   = 48;
 
-    const data = eventQueue.shift();
-    isShowing = true;
+let scrollIndex  = 0;
+let lastNewAt    = 0;
+let scrollTimer  = null;
 
-    showEvent(data);
+/* -----------------------------------------------------
+   Fake-Dummy-Zeile => sorgt dafür, dass der erste echte 
+   Event IMMER smooth rein-scrollt
+------------------------------------------------------ */
+addItem(" ");  // Dummy, wird sofort rausgescrollt
 
-    setTimeout(() => {
-        hideEvent(() => {
-            isShowing = false;
-            showNext();
-        });
-    }, SHOW_TIME);
-}
 
-function showEvent(data) {
-    const label = data.label || "";
-    const minutes = data.minutes || 0;
+socket.on("time_added", data => {
+    console.log("time_added:", data);
+    const text = formatEvent(data);
+    addItem(text);
+});
 
-    let icon = "🎁";
-    let line = "";
+/* ================================
+   FORMAT EVENT
+================================ */
+function formatEvent(data) {
+    const label    = data.label    || "";
+    const minutes  = data.minutes  || 0;
+    const username = data.username || data.user || "Someone";
+
+    const timeStr = `${minutes} min`;
 
     if (/Gift Bundle/i.test(label)) {
         const m = label.match(/\((\d+)\)/);
         const count = m ? parseInt(m[1], 10) : 1;
-        line = `${count} Gifted Subs`;
+        return `+${count} Subs by ${username} (${timeStr})`;
     }
-    else if (/Sub/i.test(label)) {
-        line = "1 Sub";
+
+    if (/Sub/i.test(label)) {
+        return `+1 Sub by ${username} (${timeStr})`;
     }
-    else if (/Bits/i.test(label)) {
-        let amt = "?";
 
-        let m1 = label.match(/\((\d+)\)/);
-        let m2 = label.match(/SoundAlerts\s+(\d+)\s*Bits/i);
-
-        if (m1) amt = m1[1];
-        else if (m2) amt = m2[1];
-
-        icon = "💎";
-        line = `${amt} Bits`;
+    if (/Bits/i.test(label)) {
+        const m = label.match(/\((\d+)\)/) || label.match(/(\d+)\s*Bits/);
+        const amt = m ? m[1] : "?";
+        return `+${amt} Bits by ${username} (${timeStr})`;
     }
-    else if (/Donation|Tip|€/i.test(label)) {
+
+    if (/Donation|Tip|€/i.test(label)) {
         const m = label.match(/(\d+(\.\d+)?)/);
-        let amt = m ? parseFloat(m[1]) : null;
-
-        icon = "💶";
-        line = amt === null
-            ? "? €"
-            : (Number.isInteger(amt)
-                ? `${amt} €`
-                : `${amt.toFixed(2).replace(".00", "")} €`);
+        let amt = m ? m[1] : "?";
+        return `+${amt} € by ${username} (${timeStr})`;
     }
 
-    const mm = String(minutes % 60).padStart(2, "0");
-    const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
-
-    document.getElementById("event").innerHTML = `${icon} ${line}`;
-    document.getElementById("minutes").innerHTML = `${hh}:${mm}`;
-
-    const box = document.getElementById("box");
-    box.classList.remove("fadeOut");
-    box.style.display = "block";
-    box.classList.add("fadeIn");
+    return `+Support by ${username} (${timeStr})`;
 }
 
-function hideEvent(callback) {
-    const box = document.getElementById("box");
-    box.classList.remove("fadeIn");
-    box.classList.add("fadeOut");
-    setTimeout(() => {
-        box.style.display = "none";
-        callback();
-    }, 400);
+/* ================================
+   Item hinzufügen
+================================ */
+function addItem(text) {
+    const li = document.createElement("li");
+    li.textContent = text;
+    ul.appendChild(li);
+
+    container.style.display = "flex";
+    lastNewAt = Date.now();
+
+    if (!scrollTimer) {
+        startScrollLoop();
+    }
 }
 
-socket.on("time_added", data => {
-    eventQueue.push(data);
-    showNext();
-});
+/* ================================
+   Scroll-Loop
+================================ */
+function startScrollLoop() {
+    scrollTimer = setInterval(() => {
+        const count = ul.children.length;
+        if (count === 0) {
+            resetAll();
+            return;
+        }
+
+        const idle = Date.now() - lastNewAt;
+
+        if (count === 1) {
+            if (idle > IDLE_HIDE_MS) resetAll();
+            return;
+        }
+
+        if (scrollIndex < count - 1) {
+    scrollIndex++;
+} else {
+
+    // Letzter Eintrag → raus scrollen
+    scrollIndex++;
+
+    ul.style.transition = `transform ${SCROLL_MS}ms ease-out`;
+    ul.style.transform  = `translateY(-${scrollIndex * ITEM_HEIGHT}px)`;
+
+    // danach Reset
+    setTimeout(() => resetAll(), SCROLL_MS + 50);
+
+    return;
+}
+
+
+        ul.style.transition = `transform ${SCROLL_MS}ms ease-out`;
+        ul.style.transform  = `translateY(-${scrollIndex * ITEM_HEIGHT}px)`;
+
+    }, SHOW_MS);
+}
+
+/* ================================
+   Reset
+================================ */
+function resetAll() {
+    if (scrollTimer) {
+        clearInterval(scrollTimer);
+        scrollTimer = null;
+    }
+
+    scrollIndex = 0;
+    lastNewAt = 0;
+
+    ul.style.transition = "none";
+    ul.style.transform  = "translateY(0)";
+
+    ul.innerHTML = "";
+    container.style.display = "none";
+
+    // Beim Reset wieder Dummy einfügen
+    addItem(" ");
+}
 </script>
 
 </body>

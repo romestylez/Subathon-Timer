@@ -40,37 +40,31 @@
         -1px  1px 0 #000,
          1px  1px 0 #000;
     }
+	
 
-    #pause-indicator {
-      font-family: 'Knewave', cursive;
-      font-size: 90px;
-      color: #005fa3;
-      display: none;                 /* wird per JS ein-/ausgeblendet */
-      text-shadow:
-        -1px -1px 0 #000,
-         1px -1px 0 #000,
-        -1px  1px 0 #000,
-         1px  1px 0 #000;
-      margin-right: 10px;            /* kleiner Abstand zur Uhrzeit */
-    }
 
-    /* Nur der "Paused"-Text ist absolut positioniert und verschiebbar */
-    #paused-label {
-      position: absolute;
-      left: 10px;                   /* Position nach Wunsch anpassen */
-      top: -5px;                     /* Position nach Wunsch anpassen */
-      display: none;                 /* wird per JS ein-/ausgeblendet */
-      font-family: 'Knewave', cursive;
-      font-size: 28px;
-      color: #ffcc00;
-      text-shadow:
-        -1px -1px 0 #000,
-         1px -1px 0 #000,
-        -1px  1px 0 #000,
-         1px  1px 0 #000;
-      pointer-events: none;          /* klickt nicht "darüber" */
-      z-index: 2;
-    }
+    #pause-icon {
+      width: 65px;          /* gleiche Wirkung wie bisherige Textgröße */
+      height: auto;
+      fill: #005fa3;        /* gleiche Farbe wie die Uhr */
+      filter: drop-shadow(-1px -1px 0 #000)
+      drop-shadow(1px -1px 0 #000)
+      drop-shadow(-1px 1px 0 #000)
+      drop-shadow(1px 1px 0 #000);
+      margin-right: 20px;
+}
+
+/* Noch langsamer & smoother */
+.pulse-paused,
+.pulse-time {
+  animation: pausePulse 6.5s ease-in-out infinite;
+}
+
+@keyframes pausePulse {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.65; }
+  100% { opacity: 1; }
+}
 
     #timer .hm {
       display: inline-block;
@@ -90,49 +84,68 @@
 <body>
   <div id="wrapper">
     <div id="timer">
-      <span id="pause-indicator">||</span>   <!-- bleibt im Flow wie vorher -->
+      <span id="pause-indicator">
+  <svg id="pause-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512">
+    <path d="M48 32C21.5 32 0 53.5 0 80L0 432c0 26.5 21.5 48 48 48l64 0c26.5 0 48-21.5 48-48l0-352c0-26.5-21.5-48-48-48L48 32zm224 0c-26.5 0-48 21.5-48 48l0 352c0 26.5 21.5 48 48 48l64 0c26.5 0 48-21.5 48-48l0-352c0-26.5-21.5-48-48-48l-64 0z"/>
+  </svg>
+</span>
+
       <span class="hm">00:00</span>
       <span class="seconds">00</span>
     </div>
 
-    <!-- separat, absolut positioniert -->
-    <div id="paused-label">Paused</div>
   </div>
 
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-  <script>
-    const BASE = "http://subathon.smtxlost.tv:5000";
-    const socket = io(BASE);
-    const hmSpan = document.querySelector("#timer .hm");
-    const secSpan = document.querySelector("#timer .seconds");
-    const pauseIcon = document.getElementById("pause-indicator");
-    const pausedLabel = document.getElementById("paused-label");
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+const BASE = "http://subathon.smtxlost.tv:5000";
+const socket = io(BASE);
 
-    function formatTime(seconds) {
-      let h = Math.floor(seconds / 3600);
-      let m = Math.floor((seconds % 3600) / 60);
-      let s = seconds % 60;
-      return {
-        hm: `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`,
-        s: `${String(s).padStart(2,"0")}`
-      };
-    }
+const hmSpan     = document.querySelector("#timer .hm");
+const secSpan    = document.querySelector("#timer .seconds");
+const pauseIcon  = document.getElementById("pause-indicator");
 
-    function updateTimer(data) {
-      const t = formatTime(data.remaining);
-      hmSpan.textContent = t.hm;
-      secSpan.textContent = t.s;
+function formatTime(seconds) {
+  let h = Math.floor(seconds / 3600);
+  let m = Math.floor((seconds % 3600) / 60);
+  let s = seconds % 60;
+  return {
+    hm: `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`,
+    s:  `${String(s).padStart(2,"0")}`
+  };
+}
 
-      const show = !!data.paused;
-      pauseIcon.style.display = show ? "inline-block" : "none";  // Symbol wie vorher
-      pausedLabel.style.display = show ? "block" : "none";        // Absoluter Text
-    }
+function updateTimer(data) {
+  const t = formatTime(data.remaining);
+  hmSpan.textContent = t.hm;
+  secSpan.textContent = t.s;
 
-    socket.on("timer_update", updateTimer);
+  const show = !!data.paused;
 
-    fetch(BASE + "/state")
-      .then(r => r.json())
-      .then(updateTimer);
-  </script>
+  // Pause Icon sichtbar/unsichtbar
+  pauseIcon.style.display = show ? "inline-block" : "none";
+
+  // Pulse-Klasse ein/aus
+  if (show) {
+  pauseIcon.classList.add("pulse-paused");
+  hmSpan.classList.add("pulse-time");
+  secSpan.classList.add("pulse-time");
+} else {
+  pauseIcon.classList.remove("pulse-paused");
+  hmSpan.classList.remove("pulse-time");
+  secSpan.classList.remove("pulse-time");
+}
+
+}
+
+// Socket Listener WIEDER AUF ROOT-LEVEL
+socket.on("timer_update", updateTimer);
+
+// initialen Status laden
+fetch(BASE + "/state")
+  .then(r => r.json())
+  .then(updateTimer);
+</script>
+
 </body>
 </html>
