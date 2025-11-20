@@ -155,10 +155,10 @@ const params = new URLSearchParams(window.location.search);
 const streamer = params.get("streamer") || "1";
 
 // Rewards API wie früher:
-const REWARDS_URL = `http://localhost:5000/rewards?streamer=${streamer}`;
+const REWARDS_URL = `http://subathon.smtxlost.tv:5000/rewards?streamer=${streamer}`;
 
 // Goals API für beide gleich:
-const GOALS_URL = "http://localhost:5000/goals";
+const GOALS_URL = "http://subathon.smtxlost.tv:5000/goals";
 
 
 /* ===========================================================
@@ -209,7 +209,7 @@ function loadSlideshow() {
 
           next.classList.add("active");
 
-        }, 6000);
+        }, 5000);
       });
     });
 }
@@ -225,7 +225,23 @@ function loadGoals() {
       const box = document.getElementById("goalsBox");
 
       const totalMinutes = Number(data.total_minutes_supported || 0);
-      const goals = Array.isArray(data.goals) ? data.goals : [];
+const goals = Array.isArray(data.goals) ? data.goals : [];
+
+// Hier: LIVE prüfen
+goals.forEach(g => {
+  const goalMinutes = Number(g.hours) * 60;
+  g.reached = totalMinutes >= goalMinutes;
+});
+
+
+      // *** SORTIERUNG HINZUGEFÜGT ***
+      // Saubere numerische Sortierung der Goals – unabhängig vom Format
+goals.sort((a, b) => {
+  const A = parseInt((a.hours + "").replace(/\D/g, "")) || 0;
+  const B = parseInt((b.hours + "").replace(/\D/g, "")) || 0;
+  return A - B;
+});
+
 
       let hours = Math.floor(totalMinutes / 60);
       let minutes = Math.round(totalMinutes % 60);
@@ -256,6 +272,7 @@ function loadGoals() {
       box.querySelector(".divider").style.width = Math.ceil(textWidth + 30) + "px";
     });
 }
+
 
 
 /* ===========================================================

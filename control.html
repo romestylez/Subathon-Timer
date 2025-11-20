@@ -224,6 +224,13 @@ document.getElementById("total").innerText =
 
           goalList.innerHTML = "";
           goalInputs.innerHTML = "";
+		  // Goals sortieren (numerisch, sicher, wie in slideshow)
+          data.goals.sort((a, b) => {
+            const A = parseInt((a.hours + "").replace(/\D/g, "")) || 0;
+            const B = parseInt((b.hours + "").replace(/\D/g, "")) || 0;
+            return A - B;
+          });
+
           data.goals.forEach((g, i) => {
             const reached = !!g.reached;
             const emoji = reached ? "✅" : "⏳";

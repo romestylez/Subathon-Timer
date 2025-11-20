@@ -733,50 +733,6 @@ def start_tipeee(name, api_key, config):
 # --------------------
 # Flask routes
 # --------------------
-@app.route("/goals/add")
-def add_goal():
-    global goals_data
-
-    # priorisiere raw-Parameter (für Streamer.bot)
-    raw = request.args.get("raw")
-    hours_param = request.args.get("hours")
-    title_param = request.args.get("title")
-
-    try:
-        # Fall 1: Streamer.bot ruft "rawInput" auf
-        if raw:
-            raw = raw.strip()
-            parts = raw.split(" ", 1)
-            if len(parts) < 2:
-                return jsonify({"error": "Format needed: '<hours> <title>'"}), 400
-            hours = float(parts[0])
-            title = parts[1].strip()
-
-        # Fall 2: klassische hours= & title= API
-        elif hours_param and title_param:
-            hours = float(hours_param)
-            title = title_param.strip()
-
-        else:
-            return jsonify({"error": "Provide either ?raw= or ?hours=&title="}), 400
-
-        # Goal anlegen
-        new_goal = {
-            "hours": hours,
-            "title": title,
-            "reached": False
-        }
-
-        goals_data["goals"].append(new_goal)
-        save_goals()
-
-        print(f"[{ts()}] [GOALS] Added goal {hours}h – {title}")
-        return jsonify({"status": "ok", "goal": new_goal})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 
 @app.route("/")
 def index():
@@ -922,13 +878,69 @@ def update_goals():
         print(f"[{ts()}] [GOALS] Fehler beim Update: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/goals/reset")
+@app.get("/goals/reset")
 def reset_goals():
-    goals_data["total_minutes_supported"] = 0.0
-    save_goals()
-    print(f"[{ts()}] [GOALS] Gesamt-Support auf 0 zurückgesetzt")
-    return jsonify({"status": "ok", "total_minutes_supported": 0.0})
+    global goals_data
 
+    with open("goals.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    data["total_minutes_supported"] = 0
+    for g in data["goals"]:
+        g["reached"] = False
+
+    with open("goals.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    # 💥 Der entscheidende Schritt!
+    goals_data = data
+
+    return {"status": "reset", "total": 0}
+
+@app.route("/goals/add")
+def add_goal():
+    global goals_data
+
+    # priorisiere raw-Parameter (für Streamer.bot)
+    raw = request.args.get("raw")
+    hours_param = request.args.get("hours")
+    title_param = request.args.get("title")
+
+    try:
+        # Fall 1: Streamer.bot ruft "rawInput" auf
+        if raw:
+            raw = raw.strip()
+            parts = raw.split(" ", 1)
+            if len(parts) < 2:
+                return jsonify({"error": "Format needed: '<hours> <title>'"}), 400
+            hours = float(parts[0])
+            title = parts[1].strip()
+
+        # Fall 2: klassische hours= & title= API
+        elif hours_param and title_param:
+            hours = float(hours_param)
+            title = title_param.strip()
+
+        else:
+            return jsonify({"error": "Provide either ?raw= or ?hours=&title="}), 400
+
+        # Goal anlegen
+        new_goal = {
+            "hours": hours,
+            "title": title,
+            "reached": False
+        }
+
+        goals_data["goals"].append(new_goal)
+        save_goals()
+
+        print(f"[{ts()}] [GOALS] Added goal {hours}h – {title}")
+        return jsonify({"status": "ok", "goal": new_goal})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# === Happyhour API ===     
 @app.route("/happyhour")
 def happyhour():
     global happy_active, happy_until
@@ -986,8 +998,6 @@ def fake_soundalerts():
 
     print(f"[FAKE] {label} | +{minutes} minutes (NO TIMER CHANGE)")
     return jsonify({"ok": True, "label": label, "minutes": minutes})
-
-
 
 @app.route("/fake/gift")
 def fake_gift():
@@ -1059,7 +1069,6 @@ def fake_sub():
     print(f"[FAKE] {label} | +{minutes} minutes")
     return jsonify({"ok": True, "label": label, "minutes": minutes})
 
-
 @app.route("/fake/bits")
 def fake_bits():
     amount = int(request.args.get("amount", "100"))
@@ -1078,7 +1087,6 @@ def fake_bits():
 
     print(f"[FAKE] {label} | +{minutes} minutes")
     return jsonify({"ok": True, "label": label, "minutes": minutes})
-
 
 @app.route("/fake/euro")
 def fake_euro():
@@ -1103,9 +1111,6 @@ def fake_euro():
 
     print(f"[FAKE] {label} | +{minutes} minutes")
     return jsonify({"ok": True, "label": label, "minutes": minutes})
-
-
-# === END GOALS API ===
 
 # --------------------
 # Main start
@@ -1140,5 +1145,5 @@ if __name__ == "__main__":
     if TIPEEE_API_KEY2 and CONFIG2:
         start_tipeee(f"{LABEL_STREAMER2}-Tipeee", TIPEEE_API_KEY2, CONFIG2)
 
-    print(f"[{ts()}] [APP] Subathon timer running at http://localhost:5000")
+    print(f"[{ts()}] [APP] Subathon timer running at http://subathon.smtxlost.tv:5000")
     socketio.run(app, host="0.0.0.0", port=5000)

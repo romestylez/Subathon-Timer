@@ -13,7 +13,7 @@
     "minutes_per_eur": 2
   },
   "timer": {
-    "start_minutes": 60,
+    "start_minutes": 1440,
     "max_minutes": 0
   }
 }
