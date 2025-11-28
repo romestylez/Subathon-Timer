@@ -94,29 +94,30 @@ function formatEvent(data) {
 
     const timeStr = `${minutes} min`;
 
-    if (/Gift Bundle/i.test(label)) {
-        const m = label.match(/\((\d+)\)/);
-        const count = m ? parseInt(m[1], 10) : 1;
-        return `+${count} Subs by ${username} (${timeStr})`;
-    }
+// --- Gifted Subs mit count aus app.py ---
+if (data.count && data.count > 1) {
+    return `+${data.count} Subs von ${username} (${timeStr})`;
+}
 
-    if (/Sub/i.test(label)) {
-        return `+1 Sub by ${username} (${timeStr})`;
-    }
+// Einzel-Sub
+if (/sub/i.test(label)) {
+    return `+1 Sub von ${username} (${timeStr})`;
+}
+
 
     if (/Bits/i.test(label)) {
         const m = label.match(/\((\d+)\)/) || label.match(/(\d+)\s*Bits/);
         const amt = m ? m[1] : "?";
-        return `+${amt} Bits by ${username} (${timeStr})`;
+        return `+${amt} Bits von ${username} (${timeStr})`;
     }
 
     if (/Donation|Tip|€/i.test(label)) {
         const m = label.match(/(\d+(\.\d+)?)/);
         let amt = m ? m[1] : "?";
-        return `+${amt} € by ${username} (${timeStr})`;
+        return `+${amt} € von ${username} (${timeStr})`;
     }
 
-    return `+Support by ${username} (${timeStr})`;
+    return `+Support von ${username} (${timeStr})`;
 }
 
 /* ================================

@@ -11,9 +11,5 @@
   },
   "streamelements": {
     "minutes_per_eur": 3
-  },
-  "timer": {
-    "start_minutes": 60,
-    "max_minutes": 0
   }
 }

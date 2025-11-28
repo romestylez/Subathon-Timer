@@ -79,7 +79,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # Timer variables
 # --------------------
 remaining = CONFIG1["timer"]["start_minutes"] * 60
-paused = False
+paused = True
 lock = threading.Lock()
 
 # --------------------
@@ -237,11 +237,10 @@ def timer_loop():
             socketio.emit("timer_update", {"remaining": remaining, "paused": paused})
             # save state every 300 seconds (= 5 minutes)
             counter += 1
-            if counter >= 300:
+            if counter >= 30:
                 save_state()
                 counter = 0
         socketio.sleep(1)
-
 
 # --------------------
 # Handle events
@@ -330,13 +329,6 @@ def apply_minutes(platform, minutes_to_add, label, username=""):
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
-    # popup fürs Overlay
-    socketio.emit("time_added", {
-        "platform": platform,
-        "label": label,
-        "minutes": float(m),
-        "username": username
-    })
     
 
 def get_current_multiplier():
@@ -508,7 +500,29 @@ def handle_event(platform, data, config):
         else:
             label = etype.capitalize()
 
+                # --- Anzahl Subs bestimmen ---
+        sub_count = 1  # Standardwert
+
+        if etype == "communityGiftPurchase":
+            sub_count = int(data.get("data", {}).get("amount", 1))
+
+        elif etype == "subscriber" and data.get("data", {}).get("gifted", False):
+            sub_count = 1  # Einzelgift
+
+        # --- Zeit anwenden ---
         apply_minutes(platform, float(minutes_to_add), label, username=username)
+
+        # --- Popup fürs Overlay ---
+                # --- Popup fürs Overlay ---
+        socketio.emit("time_added", {
+            "platform": platform,
+            "label": label,
+            "minutes": float(fmt_minutes(minutes_to_add)),
+            "username": username,
+            "count": sub_count
+        })
+
+
 
 # --------------------
 # StreamElements WS with auto-reconnect (activities only)
@@ -606,13 +620,28 @@ def start_twitch_chat(name, oauth_token, nick, channel, config):
                     if " PRIVMSG " in raw:
                         parts = raw.split(" PRIVMSG ", 1)
                         trailing = parts[1].split(" :", 1)
+
                         if len(trailing) == 2:
+
+                            # --- Sender aus IRC extrahieren ---
+                            try:
+                                prefix = raw.split("!", 1)[0]
+                                sender = prefix.split(":")[-1]
+                            except:
+                                sender = ""
+
+                            # --- Nur SoundAlerts darf triggern ---
+                            if sender.lower() != "soundalerts":
+                                return
+
+                            # --- Text extrahieren und Event weitergeben ---
                             text = trailing[1]
-                            # Forward to handle_event as a chat "message"
                             fake = {"type": "message", "data": {"text": text}}
                             handle_event(name, fake, config)
+
                 except Exception as e:
                     print(f"[{ts()}] [{name}] IRC parse error:", e)
+
 
         def on_error(ws, error):
             print(f"[{ts()}] [{name}] IRC error:", error)
@@ -847,7 +876,7 @@ def get_time_log():
         if not os.path.exists(TIME_ADD_LOG):
             return jsonify({"lines": ["(no time additions yet)\n"]})
         with open(TIME_ADD_LOG, "r", encoding="utf-8") as f:
-            lines = f.readlines()[-10:]
+            lines = f.readlines()[-50:]
         return jsonify({"lines": lines})
     except Exception as e:
         return jsonify({"lines": [f"Fehler beim Lesen von {TIME_ADD_LOG}: {e}\n"]})

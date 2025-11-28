@@ -69,10 +69,15 @@ box-sizing: border-box;
 
     /* ======= Goal styles unverändert ======= */
     #goalsBox {
-      padding: 10px 10px;
-      text-align: left;
-      color: #ffcc00;
-    }
+  padding: 10px 10px;
+  text-align: left;
+  color: #ffcc00;
+  background: rgba(40, 40, 40, 0.55);
+  border-radius: 12px;
+  width: fit-content;
+  box-shadow: 0 0 8px rgba(0,0,0,0.4);
+}
+
 
     .headline {
       color: #ffcc00;
@@ -91,10 +96,12 @@ box-sizing: border-box;
     .goal-line {
       color: #ffcc00;
       display: inline-block;
+	  font-weight: 600;  /* ← Schrift dicker */
     }
 
     .goal-line.reached {
       color: #6aff6a;
+	  font-weight: 600;  /* ← Schrift dicker */
     }
 
     /* ======= Slide-Effekt für Goals ======= */
