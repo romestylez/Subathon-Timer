@@ -112,12 +112,35 @@ function formatEvent(data) {
         return `${flame}+1 Sub von ${username} (${timeStr})`;
     }
 
-    // Bits
-    if (/Bits/i.test(label)) {
-        const m = label.match(/\((\d+)\)/) || label.match(/(\d+)\s*Bits/);
-        const amt = m ? m[1] : "?";
-        return `${flame}+${amt} Bits von ${username} (${timeStr})`;
-    }
+// SoundAlerts Bits (hat Vorrang vor normalen Bits!)
+if (/^SoundAlerts\s+/i.test(label)) {
+
+    let m = label.match(/(\d+)\s*Bits/i);
+    let amt = m ? m[1] : "?";
+
+    return `${flame}+${amt} Bits (SoundAlerts) von ${username} (${timeStr})`;
+}
+
+
+    // Bits (inkl. SoundAlerts)
+if (/Bits/i.test(label)) {
+
+    let amt = "?";
+
+    // Normale Bits: (100) oder "100 Bits"
+    let m1 = label.match(/\((\d+)\)/);
+    let m2 = label.match(/(\d+)\s*Bits/);
+
+    // SoundAlerts: "SoundAlerts 100 Bits"
+    let m3 = label.match(/SoundAlerts\s+(\d+)\s*Bits/i);
+
+    if (m1) amt = m1[1];
+    else if (m2) amt = m2[1];
+    else if (m3) amt = m3[1];
+
+    return `${flame}+${amt} Bits von ${username} (${timeStr})`;
+}
+
 
     // Donation / Tip
     if (/Donation|Tip|€/i.test(label)) {

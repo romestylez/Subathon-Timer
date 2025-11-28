@@ -439,23 +439,6 @@ def handle_event(platform, data, config):
     log_event(platform, data)
 
 
-    # SoundAlerts chat bits parsing (from chat source)
-    if etype == "message":
-        text = data.get("data", {}).get("text", "")
-        match = re.search(r"(.+?) löst (.+?) mit (\d+)\s*Bits aus", text, flags=re.IGNORECASE)
-        if match:
-            user = match.group(1)
-            alert_name = match.group(2)
-            bits = int(match.group(3))
-
-            minutes_to_add = (bits / 100.0) * float(config["twitch"]["bits_per_100"])
-            minutes_to_add = round(minutes_to_add, 2)
-            # Platform label: replace "-IRC" with "-SoundAlerts" to keep logs clean
-            nice_platform = platform.replace("-IRC", "-SoundAlerts")
-
-            apply_minutes(nice_platform, minutes_to_add, f"SoundAlerts {bits} Bits", username=username)
-
-            return  # handled
 
     # Twitch/Kick subs via StreamElements
     if etype == "subscriber":
@@ -565,15 +548,42 @@ def handle_event(platform, data, config):
         # --- Zeit anwenden ---
         apply_minutes(platform, float(minutes_to_add), label, username=username)
 
-        # --- Popup fürs Overlay ---
-                # --- Popup fürs Overlay ---
-        socketio.emit("time_added", {
-            "platform": platform,
-            "label": label,
-            "minutes": float(fmt_minutes(minutes_to_add * get_current_multiplier())),
-            "username": username,
-            "count": sub_count
-        })
+            # SoundAlerts Bits aus IRC
+    if etype == "message":
+        text = data.get("data", {}).get("text", "")
+        match = re.search(r"(.+?) löst (.+?) mit (\d+)\s*Bits aus", text, flags=re.IGNORECASE)
+        if match:
+            user = match.group(1)
+            alert_name = match.group(2)
+            bits = int(match.group(3))
+
+            # Minuten berechnen
+            minutes_to_add = round((bits / 100.0) * float(config["twitch"]["bits_per_100"]), 2)
+
+            # Plattform-Kennung anpassen
+            nice_platform = platform.replace("-IRC", "-SoundAlerts")
+
+            # Timer erhöhen
+            apply_minutes(
+                nice_platform,
+                minutes_to_add,
+                f"SoundAlerts {bits} Bits",
+                username=user
+            )
+
+            # Overlay Popup senden
+            socketio.emit("time_added", {
+                "platform": nice_platform,
+                "label": f"SoundAlerts {bits} Bits",
+                "minutes": minutes_to_add,
+                "username": user,
+                "count": 1
+            })
+
+            return  # handled
+
+
+
 
 
 
