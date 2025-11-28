@@ -88,37 +88,55 @@ socket.on("time_added", data => {
    FORMAT EVENT
 ================================ */
 function formatEvent(data) {
-    const label    = data.label    || "";
-    const minutes  = data.minutes  || 0;
+    let label    = data.label || "";
+    const minutes  = data.minutes || 0;
     const username = data.username || data.user || "Someone";
+    const count    = data.count || 1;
 
     const timeStr = `${minutes} min`;
 
-// --- Gifted Subs mit count aus app.py ---
-if (data.count && data.count > 1) {
-    return `+${data.count} Subs von ${username} (${timeStr})`;
-}
+    // Happy Hour?
+    const isHH = label.includes("HAPPY HOUR");
+    const flame = isHH ? "🔥 " : "";
 
-// Einzel-Sub
-if (/sub/i.test(label)) {
-    return `+1 Sub von ${username} (${timeStr})`;
-}
+    // 🔥 Prefix entfernen, damit die Erkennung wieder funktioniert
+    label = label.replace(/\[HAPPY HOUR.*?\]\s*/i, "");
 
+    // Gift Bundle
+    if (count > 1) {
+        return `${flame}+${count} Subs von ${username} (${timeStr})`;
+    }
 
+    // Einzel Sub
+    if (/sub/i.test(label)) {
+        return `${flame}+1 Sub von ${username} (${timeStr})`;
+    }
+
+    // Bits
     if (/Bits/i.test(label)) {
         const m = label.match(/\((\d+)\)/) || label.match(/(\d+)\s*Bits/);
         const amt = m ? m[1] : "?";
-        return `+${amt} Bits von ${username} (${timeStr})`;
+        return `${flame}+${amt} Bits von ${username} (${timeStr})`;
     }
 
+    // Donation / Tip
     if (/Donation|Tip|€/i.test(label)) {
         const m = label.match(/(\d+(\.\d+)?)/);
-        let amt = m ? m[1] : "?";
-        return `+${amt} € von ${username} (${timeStr})`;
+        const amt = m ? m[1] : "?";
+        return `${flame}+${amt} € von ${username} (${timeStr})`;
     }
 
-    return `+Support von ${username} (${timeStr})`;
+    // Kick Gifts
+    if (/Kicks/i.test(label)) {
+        const m = label.match(/\((\d+)\)/);
+        const amt = m ? m[1] : "?";
+        return `${flame}+${amt} Kicks von ${username} (${timeStr})`;
+    }
+
+    // Fallback
+    return `${flame}+Support von ${username} (${timeStr})`;
 }
+
 
 /* ================================
    Item hinzufügen

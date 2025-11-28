@@ -87,8 +87,7 @@ lock = threading.Lock()
 # --------------------
 HAPPY_MULTIPLIER = float(os.getenv("HAPPY_MULTIPLIER", "1"))
 happy_active = False
-happy_until = 0
-
+happy_remaining = 0     # Countdown in Sekunden
 
 STATE_FILE = "state.json"
 LOG_FILE = "events.log"
@@ -133,12 +132,52 @@ def log_goal_reached(goal):
     try:
         ts_str = ts()
         line = f"[{ts_str}] [GOAL] 🎯 Ziel erreicht: {goal['hours']} Stunden – {goal['title']}\n"
+
         with open(TIME_ADD_LOG, "a", encoding="utf-8") as f:
             f.write(line)
+
+        # --- goal.txt neu aufbauen (sortiert nach Stunden) ---
+        reached_goals = [
+            (float(g["hours"]), g["title"])
+            for g in goals_data.get("goals", [])
+            if g.get("reached")
+        ]
+
+        reached_goals.sort(key=lambda x: x[0])
+
+        titles_sorted = [title for hours, title in reached_goals]
+
+        with open("goal.txt", "w", encoding="utf-8") as f:
+            f.write(" | ".join(titles_sorted))
+
     except Exception as e:
         print(f"[{ts()}] [GOALS] Error while logging goal:", e)
 
 goals_data = load_goals()
+
+# --- Initial goal.txt rebuild (sortiert nach Stunden, Titel in einer Zeile) ---
+try:
+    reached_goals = [
+        (float(g["hours"]), g["title"])
+        for g in goals_data.get("goals", [])
+        if g.get("reached")
+    ]
+
+    # Sortieren: kleinste Stunden zuerst
+    reached_goals.sort(key=lambda x: x[0])
+
+    # Nur Titel extrahieren
+    titles_sorted = [title for hours, title in reached_goals]
+
+    # Als eine einzige Zeile speichern
+    with open("goal.txt", "w", encoding="utf-8") as f:
+        if titles_sorted:
+            f.write(" | ".join(titles_sorted))
+
+    print(f"[{ts()}] [GOALS] goal.txt initial rebuilt (sorted)")
+except Exception as e:
+    print(f"[{ts()}] [GOALS] Error rebuilding goal.txt:", e)
+
 
 def check_goals_reached():
     total_hours = float(goals_data.get("total_minutes_supported", 0.0)) / 60.0
@@ -221,18 +260,22 @@ load_state()
 # Timer loop
 # --------------------
 def timer_loop():
-    global remaining, happy_active, happy_until
+    global remaining, paused, happy_active, happy_remaining
     counter = 0
     while True:
         with lock:
             if not paused and remaining > 0:
                 remaining -= 1
 
-            # Happy Hour automatisch deaktivieren, wenn abgelaufen
-            if happy_active and time.time() >= happy_until:
-                happy_active = False
-                happy_until = 0
-                print(f"[{ts()}] [HAPPY] Happy Hour expired")
+            # Happy Hour Countdown – läuft nur, wenn Timer nicht pausiert
+            if happy_active and not paused:
+                happy_remaining -= 1
+                if happy_remaining <= 0:
+                    happy_active = False
+                    happy_remaining = 0
+                    print(f"[{ts()}] [HAPPY] Happy Hour expired")
+
+
 
             socketio.emit("timer_update", {"remaining": remaining, "paused": paused})
             # save state every 300 seconds (= 5 minutes)
@@ -332,10 +375,11 @@ def apply_minutes(platform, minutes_to_add, label, username=""):
     
 
 def get_current_multiplier():
-    global happy_active, happy_until
-    if happy_active and time.time() < happy_until:
+    global happy_active, happy_remaining
+    if happy_active and happy_remaining > 0:
         return HAPPY_MULTIPLIER
     return 1.0
+
 
 
 def handle_event(platform, data, config):
@@ -359,13 +403,18 @@ def handle_event(platform, data, config):
         if m:
             username = m.group(1)
 
-    # Kick Chat
-    if username is None and "nickname" in data:
-        username = data["nickname"]
+        # Kick Gifts → Username NICHT überschreiben
+    if data.get("type") == "kick_gift" and "username" in data:
+        username = data["username"]
+    else:
+        # Kick Chat Nickname
+        if username is None and "nickname" in data:
+            username = data["nickname"]
 
-    # Fallback
-    if username is None:
-        username = ""
+        # Fallback
+        if username is None:
+            username = ""
+
         
     minutes_to_add = 0.0
 
@@ -478,7 +527,9 @@ def handle_event(platform, data, config):
             if 'gifted' in locals() and gifted:
                 label = "Gifted Sub"
             else:
-                if tier_raw == "1000" or tier_raw == "prime":
+                if tier_raw == "prime":
+                    label = "Prime Sub"
+                elif tier_raw == "1000":
                     label = "T1 Sub"
                 elif tier_raw == "2000":
                     label = "T2 Sub"
@@ -486,6 +537,7 @@ def handle_event(platform, data, config):
                     label = "T3 Sub"
                 else:
                     label = "Sub"
+
         elif etype == "communityGiftPurchase":
             label = f"Gift Bundle"
         elif etype == "cheer":
@@ -496,7 +548,8 @@ def handle_event(platform, data, config):
         elif etype == "tip":
             label = f"Tip ({amount:.2f} €)"
         elif etype == "kick_gift":
-            label = f"Kick Gift"
+            kicks = int(data.get("amount", 0))
+            label = f"Kicks ({kicks})"
         else:
             label = etype.capitalize()
 
@@ -517,10 +570,11 @@ def handle_event(platform, data, config):
         socketio.emit("time_added", {
             "platform": platform,
             "label": label,
-            "minutes": float(fmt_minutes(minutes_to_add)),
+            "minutes": float(fmt_minutes(minutes_to_add * get_current_multiplier())),
             "username": username,
             "count": sub_count
         })
+
 
 
 
@@ -691,10 +745,21 @@ def connect_kick_chat(name, app_key, cluster, chatroom_id, config):
                 m = re.search(r"gifted\s+(\d+)\s+KICK", text, re.IGNORECASE)
                 if m:
                     amount = int(m.group(1))
-                    fake_event = {"type": "kick_gift", "amount": amount}
+
+                    # echten Gifter aus dem Chat-Text extrahieren
+                    m_user = re.match(r"@(.+?)\s+just gifted", text, re.IGNORECASE)
+                    if m_user:
+                        username = m_user.group(1)
+                    else:
+                        username = "Someone"
+
+                    fake_event = {"type": "kick_gift", "amount": amount, "username": username}
                     handle_event(name, fake_event, config)
+
+
         except Exception as e:
             print(f"[{ts()}] [{name}] KickChat parse error:", e)
+
 
     def on_close(ws, *a):
         print(f"[{ts()}] [{name}] KickChat closed, reconnect in 5s")
@@ -802,19 +867,35 @@ def get_state():
 
 @app.route("/pause")
 def pause_timer():
-    global paused
+    global paused, happy_active
+
     with lock:
         paused = True
+
+        # Happy Hour ebenfalls pausieren
+        if happy_active:
+            happy_active = False   # Multiplier deaktivieren
+
         save_state()
+
     return jsonify({"remaining": remaining, "paused": paused})
+
 
 @app.route("/resume")
 def resume_timer():
-    global paused
+    global paused, happy_active, happy_remaining
+
     with lock:
         paused = False
+
+        # Happy Hour wieder aktivieren, falls noch Restzeit vorhanden ist
+        if happy_remaining > 0:
+            happy_active = True
+
         save_state()
+
     return jsonify({"remaining": remaining, "paused": paused})
+
 
 @app.route("/toggle")
 def toggle_timer():
@@ -972,7 +1053,7 @@ def add_goal():
 # === Happyhour API ===     
 @app.route("/happyhour")
 def happyhour():
-    global happy_active, happy_until
+    global happy_active, happy_remaining
 
     # Start
     if "start" in request.args:
@@ -981,7 +1062,7 @@ def happyhour():
             return jsonify({"error": "time must be > 0 minutes"}), 400
 
         happy_active = True
-        happy_until = time.time() + (t * 60)
+        happy_remaining = t * 60
 
         print(f"[{ts()}] [HAPPY] Happy Hour started for {t} minutes (x{HAPPY_MULTIPLIER})")
         return jsonify({"status": "started", "multiplier": HAPPY_MULTIPLIER, "minutes": t})
@@ -989,17 +1070,17 @@ def happyhour():
     # Stop
     if "stop" in request.args:
         happy_active = False
-        happy_until = 0
+        happy_remaining = 0
         print(f"[{ts()}] [HAPPY] Happy Hour stopped")
         return jsonify({"status": "stopped"})
 
     # Status
-    remaining = max(0, int(happy_until - time.time()))
     return jsonify({
-        "active": happy_active and remaining > 0,
-        "remaining_seconds": remaining,
+        "active": happy_active and happy_remaining > 0,
+        "remaining_seconds": happy_remaining,
         "multiplier": HAPPY_MULTIPLIER
     })
+
 
 # --------------------
 # Fake Test Events
