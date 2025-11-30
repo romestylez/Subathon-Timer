@@ -95,6 +95,23 @@ TIME_ADD_LOG = "time_add.log"
 
 # === GOALS ===
 GOALS_FILE = "goals.json"
+GOAL_STATE_FILE = "goal_state.json"
+
+def load_goal_state():
+    if not os.path.exists(GOAL_STATE_FILE):
+        return {"written_goals": []}
+    try:
+        with open(GOAL_STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {"written_goals": []}
+
+def save_goal_state(state):
+    with open(GOAL_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2, ensure_ascii=False)
+
+goal_state = load_goal_state()
+
 def load_goals():
     if not os.path.exists(GOALS_FILE):
         return {"total_minutes_supported": 0.0, "goals": []}
@@ -136,47 +153,27 @@ def log_goal_reached(goal):
         with open(TIME_ADD_LOG, "a", encoding="utf-8") as f:
             f.write(line)
 
-        # --- goal.txt neu aufbauen (sortiert nach Stunden) ---
-        reached_goals = [
-            (float(g["hours"]), g["title"])
-            for g in goals_data.get("goals", [])
-            if g.get("reached")
-        ]
+      
+        # --- Nur neues Goal anhängen, niemals gesamte Datei überschreiben ---
+        title = goal["title"]
 
-        reached_goals.sort(key=lambda x: x[0])
+        if title not in goal_state["written_goals"]:
+            goal_state["written_goals"].append(title)
+            save_goal_state(goal_state)
 
-        titles_sorted = [title for hours, title in reached_goals]
+            append_text = (" | " if os.path.exists("goal.txt") and os.path.getsize("goal.txt") > 0 else "") + title
+            with open("goal.txt", "a", encoding="utf-8") as f:
+                f.write(append_text)
 
-        with open("goal.txt", "w", encoding="utf-8") as f:
-            f.write(" | ".join(titles_sorted))
 
     except Exception as e:
         print(f"[{ts()}] [GOALS] Error while logging goal:", e)
 
 goals_data = load_goals()
 
-# --- Initial goal.txt rebuild (sortiert nach Stunden, Titel in einer Zeile) ---
-try:
-    reached_goals = [
-        (float(g["hours"]), g["title"])
-        for g in goals_data.get("goals", [])
-        if g.get("reached")
-    ]
 
-    # Sortieren: kleinste Stunden zuerst
-    reached_goals.sort(key=lambda x: x[0])
-
-    # Nur Titel extrahieren
-    titles_sorted = [title for hours, title in reached_goals]
-
-    # Als eine einzige Zeile speichern
-    with open("goal.txt", "w", encoding="utf-8") as f:
-        if titles_sorted:
-            f.write(" | ".join(titles_sorted))
-
-    print(f"[{ts()}] [GOALS] goal.txt initial rebuilt (sorted)")
-except Exception as e:
-    print(f"[{ts()}] [GOALS] Error rebuilding goal.txt:", e)
+# --- goal.txt Auto-Rebuild deaktiviert (manueller Modus) ---
+print(f"[{ts()}] [GOALS] goal.txt rebuild skipped (manual mode)")
 
 
 def check_goals_reached():
@@ -372,7 +369,14 @@ def apply_minutes(platform, minutes_to_add, label, username=""):
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
-    
+    socketio.emit("time_added", {
+        "platform": platform,
+        "label": prefix + label,
+        "minutes": m,
+        "username": username,
+        "count": 1
+    })
+
 
 def get_current_multiplier():
     global happy_active, happy_remaining
@@ -429,14 +433,22 @@ def handle_event(platform, data, config):
     etype = data.get("type")
     text = data.get("data", {}).get("text", "")
 
-    # Completely ignore normal IRC chat messages
-    # (only continue if it's the SoundAlerts Bits trigger sentence)
+        # --- WICHTIG ---
+    # Nur IRC-Chat filtern – NICHT StreamElements, NICHT Kick!
+    # Sonst blockiert man ALLE Subs/Bits/Donations etc.
 
-    if etype == "message" and re.search(r"(.+?) löst (.+?) mit (\d+)\s*Bits aus", text, flags=re.IGNORECASE) is None:
-        return
+    if platform.endswith("-IRC"):
+        # Bei IRC müssen wir ALLES blocken,
+        # außer dem SoundAlerts-Bits-Pattern.
+        if etype == "message" and re.search(
+                r"(.+?) löst (.+?) mit (\d+)\s*Bits aus",
+                text, flags=re.IGNORECASE
+        ) is None:
+            return
 
     # From here on, only log and process relevant events
     log_event(platform, data)
+
 
 
 
@@ -548,6 +560,9 @@ def handle_event(platform, data, config):
         # --- Zeit anwenden ---
         apply_minutes(platform, float(minutes_to_add), label, username=username)
 
+
+
+
             # SoundAlerts Bits aus IRC
     if etype == "message":
         text = data.get("data", {}).get("text", "")
@@ -571,22 +586,9 @@ def handle_event(platform, data, config):
                 username=user
             )
 
-            # Overlay Popup senden
-            socketio.emit("time_added", {
-                "platform": nice_platform,
-                "label": f"SoundAlerts {bits} Bits",
-                "minutes": minutes_to_add,
-                "username": user,
-                "count": 1
-            })
+         
 
             return  # handled
-
-
-
-
-
-
 
 # --------------------
 # StreamElements WS with auto-reconnect (activities only)

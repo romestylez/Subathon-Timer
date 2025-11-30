@@ -248,7 +248,7 @@ document.getElementById("total").innerText =
             goalInputs.appendChild(row);
           });
 
-          for (let i = data.goals.length; i < 5; i++) {
+          for (let i = data.goals.length; i < 8; i++) {
             const row = document.createElement("div");
             row.className = "goal-inputs";
             row.innerHTML = `
@@ -264,7 +264,7 @@ document.getElementById("total").innerText =
     document.getElementById("saveGoals").addEventListener("click", () => {
       editingGoals = false;
       const newGoals = [];
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 8; i++) {
         const hours = parseInt(document.getElementById(`hours${i}`)?.value || 0);
         const title = document.getElementById(`title${i}`)?.value.trim();
         if (hours > 0 && title) newGoals.push({ hours, title });

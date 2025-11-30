@@ -93,7 +93,9 @@ function formatEvent(data) {
     const username = data.username || data.user || "Someone";
     const count    = data.count || 1;
 
-    const timeStr = `${minutes} min`;
+    const mins = Math.round(minutes);
+const timeStr = `${mins} min`;
+
 
     // Happy Hour?
     const isHH = label.includes("HAPPY HOUR");
@@ -102,15 +104,20 @@ function formatEvent(data) {
     // 🔥 Prefix entfernen, damit die Erkennung wieder funktioniert
     label = label.replace(/\[HAPPY HOUR.*?\]\s*/i, "");
 
-    // Gift Bundle
-    if (count > 1) {
-        return `${flame}+${count} Subs von ${username} (${timeStr})`;
-    }
+  if (/gift bundle/i.test(label)) {
+    return `${flame}+${count} Subs von ${username} (${timeStr})`;
+}
 
     // Einzel Sub
-    if (/sub/i.test(label)) {
-        return `${flame}+1 Sub von ${username} (${timeStr})`;
+    // Subs
+if (/sub/i.test(label)) {
+    const c = data.count || 1;
+    if (c > 1) {
+        return `${flame}+${c} Subs von ${username} (${timeStr})`;
     }
+    return `${flame}+1 Sub von ${username} (${timeStr})`;
+}
+
 
 // SoundAlerts Bits (hat Vorrang vor normalen Bits!)
 if (/^SoundAlerts\s+/i.test(label)) {
