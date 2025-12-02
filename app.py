@@ -341,7 +341,7 @@ def check_pending_gift(activity_group):
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
-def apply_minutes(platform, minutes_to_add, label, username=""):
+def apply_minutes(platform, minutes_to_add, label, username="", count=1):
     """Helper to apply minutes, log, emit including username."""
     if minutes_to_add <= 0:
         return
@@ -374,8 +374,9 @@ def apply_minutes(platform, minutes_to_add, label, username=""):
         "label": prefix + label,
         "minutes": m,
         "username": username,
-        "count": 1
-    })
+        "count": count
+})
+
 
 
 def get_current_multiplier():
@@ -459,6 +460,13 @@ def handle_event(platform, data, config):
         tier_raw = str(d.get("tier", "1000")).lower()
         gifted = d.get("gifted", False)
         ag = data.get("activityGroup")
+        
+        # 🔹 Wenn dieser Sub zu einem bekannten Gift-Bundle gehört → ignorieren
+        if ag and ag in community_gift_groups:
+            if DEBUG_EVENTS:
+                print(f"[{ts()}] [{platform}] Subscriber in gift bundle (activityGroup={ag}) ignored")
+            return
+
 
         # --- Kick subs ---
         if "kick" in provider or "kick" in platform.lower():
@@ -483,15 +491,29 @@ def handle_event(platform, data, config):
                 minutes_to_add = float(minutes_for_tier(config, tier_raw))
 
     # Gifted subs (Bundle)
+        # Gifted subs (Bundle)
     elif etype == "communityGiftPurchase":
         d = data.get("data", {})
         gift_amount = int(d.get("amount", 1))
-        tier_raw = str(d.get("tier", "1000")).lower()
+        provider = str(data.get("provider", "")).lower()
         ag = data.get("activityGroup")
+
+        # Bundle markieren (egal ob Twitch oder Kick)
         if ag:
             community_gift_groups.add(ag)
             pending_gifted_subs.pop(ag, None)
-        minutes_to_add = float(gift_amount) * float(minutes_for_tier(config, tier_raw))
+
+        # Kick-Bundle: Konstante Minuten pro Sub aus config["kick"]["sub"]
+        if "kick" in provider or "kick" in platform.lower():
+            per_sub = float(config["kick"]["sub"])
+            minutes_to_add = gift_amount * per_sub
+
+        # Twitch-Bundle: Minuten je nach Tier
+        else:
+            tier_raw = str(d.get("tier", "1000")).lower()
+            minutes_to_add = gift_amount * minutes_for_tier(config, tier_raw)
+
+
 
     # Bits (normale Twitch-Cheers aus SE-Activities)
     elif etype == "cheer":
@@ -558,10 +580,7 @@ def handle_event(platform, data, config):
             sub_count = 1  # Einzelgift
 
         # --- Zeit anwenden ---
-        apply_minutes(platform, float(minutes_to_add), label, username=username)
-
-
-
+        apply_minutes(platform, float(minutes_to_add), label, username=username, count=sub_count)
 
             # SoundAlerts Bits aus IRC
     if etype == "message":
