@@ -93,6 +93,28 @@ STATE_FILE = "state.json"
 LOG_FILE = "events.log"
 TIME_ADD_LOG = "time_add.log"
 
+# === DONATION GOAL ===
+DONATION_GOAL_FILE = "donation_goal.json"
+
+DONATION_GOAL_STATE = {
+    "current": 0.0
+}
+
+def load_donation_goal():
+    if os.path.exists(DONATION_GOAL_FILE):
+        try:
+            with open(DONATION_GOAL_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return {"current": 0.0}
+
+def save_donation_goal():
+    with open(DONATION_GOAL_FILE, "w", encoding="utf-8") as f:
+        json.dump(DONATION_GOAL_STATE, f)
+# === END DONATION GOAL ===
+
+
 # === GOALS ===
 GOALS_FILE = "goals.json"
 GOAL_STATE_FILE = "goal_state.json"
@@ -170,7 +192,6 @@ def log_goal_reached(goal):
         print(f"[{ts()}] [GOALS] Error while logging goal:", e)
 
 goals_data = load_goals()
-
 
 # --- goal.txt Auto-Rebuild deaktiviert (manueller Modus) ---
 print(f"[{ts()}] [GOALS] goal.txt rebuild skipped (manual mode)")
@@ -252,7 +273,7 @@ def log_time_add(platform, minutes_to_add, remaining_seconds, label=None):
 
 # Load existing state on startup
 load_state()
-
+DONATION_GOAL_STATE.update(load_donation_goal())
 # --------------------
 # Timer loop
 # --------------------
@@ -332,12 +353,9 @@ def check_pending_gift(activity_group):
     if get_current_multiplier() != 1.0:
         prefix = f"[HAPPY HOUR x{HAPPY_MULTIPLIER}] "
 
-
     msg = f"[{ts()}] {prefix}[{platform}] {label} | +{m} minutes"
     print(msg)
     log_time_add(platform, m, remaining, prefix + label)
-
-
 
     socketio.start_background_task(socketio.emit, "timer_update", new_state)
 
@@ -377,15 +395,36 @@ def apply_minutes(platform, minutes_to_add, label, username="", count=1):
         "count": count
 })
 
-
-
 def get_current_multiplier():
     global happy_active, happy_remaining
     if happy_active and happy_remaining > 0:
         return HAPPY_MULTIPLIER
     return 1.0
 
+# --------------------
+# Donation Goal Logic
+# --------------------
+def add_donation_amount(amount):
+    goal = CONFIG1.get("donation_goal")
+    if not goal or not goal.get("enabled"):
+        return True  # kein Goal → normaler Ablauf
 
+    target = float(goal.get("amount_eur", 0))
+
+    DONATION_GOAL_STATE["current"] += float(amount)
+    DONATION_GOAL_STATE["current"] = round(
+        min(DONATION_GOAL_STATE["current"], target),
+        2
+    )
+
+    save_donation_goal()
+
+    socketio.emit("donation_goal_update", {
+        "current": DONATION_GOAL_STATE["current"],
+        "target": target
+    })
+
+    return DONATION_GOAL_STATE["current"] >= target
 
 def handle_event(platform, data, config):
     global remaining, community_gift_groups, pending_gifted_subs
@@ -429,12 +468,11 @@ def handle_event(platform, data, config):
             print(f"[{ts()}] [{platform}] RAW EVENT: {json.dumps(data, indent=2, ensure_ascii=False)}")
         except Exception:
             print(f"[{ts()}] [{platform}] RAW EVENT (non-json-printable)")
-    log_event(platform, data)
 
     etype = data.get("type")
     text = data.get("data", {}).get("text", "")
 
-        # --- WICHTIG ---
+    # --- WICHTIG ---
     # Nur IRC-Chat filtern – NICHT StreamElements, NICHT Kick!
     # Sonst blockiert man ALLE Subs/Bits/Donations etc.
 
@@ -449,9 +487,6 @@ def handle_event(platform, data, config):
 
     # From here on, only log and process relevant events
     log_event(platform, data)
-
-
-
 
     # Twitch/Kick subs via StreamElements
     if etype == "subscriber":
@@ -523,12 +558,28 @@ def handle_event(platform, data, config):
     # Donations via Tipeee
     elif etype == "donation" and "tipeee" in config:
         amount = float(data.get("amount", 0))
-        minutes_to_add = float(amount) * float(config["tipeee"]["minutes_per_eur"])
+
+        if not add_donation_amount(amount):
+            msg = f"Donation Goal +{amount:.2f} €"
+            print(f"[{ts()}] [DONATION-GOAL] {msg}")
+            log_time_add(platform, 0, remaining, msg)
+            return
+
+        minutes_to_add = amount * float(config["tipeee"]["minutes_per_eur"])
 
     # Donations via StreamElements
     elif etype == "tip" and "streamelements" in config:
         amount = float(data.get("data", {}).get("amount", 0))
-        minutes_to_add = float(amount) * float(config["streamelements"]["minutes_per_eur"])
+
+        if not add_donation_amount(amount):
+            msg = f"Donation Goal +{amount:.2f} €"
+            print(f"[{ts()}] [DONATION-GOAL] {msg}")
+            log_time_add(platform, 0, remaining, msg)
+            return
+
+        minutes_to_add = amount * float(config["streamelements"]["minutes_per_eur"])
+
+
 
     # Kick gifts via Chat
     elif etype == "kick_gift":
@@ -910,6 +961,15 @@ def pause_timer():
         save_state()
 
     return jsonify({"remaining": remaining, "paused": paused})
+
+@app.route("/donation_goal")
+def donation_goal():
+    goal = CONFIG1.get("donation_goal", {})
+    return jsonify({
+        "enabled": goal.get("enabled", False),
+        "current": DONATION_GOAL_STATE["current"],
+        "target": goal.get("amount_eur", 0)
+    })
 
 
 @app.route("/resume")

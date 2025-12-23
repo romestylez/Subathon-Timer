@@ -12,6 +12,10 @@
   "tipeee": {
     "minutes_per_eur": 2
   },
+  "donation_goal": {
+  "enabled": true,
+  "amount_eur": 400
+},
   "timer": {
     "start_minutes": 1440,
     "max_minutes": 0
