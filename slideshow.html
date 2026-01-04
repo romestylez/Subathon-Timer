@@ -261,13 +261,22 @@ goals.sort((a, b) => {
         <div class="divider"></div>
       `;
 
-      goals.forEach(g => {
-        html += `
-          <div class="goal-line ${g.reached ? "reached" : ""}">
-            ${g.reached ? "✅" : "⏳"} ${g.hours} Stunden – ${g.title}
-          </div><br>
-        `;
-      });
+      if (goals.length === 0) {
+  html += `
+    <div class="goal-line">
+      Aktuell keine Goals </br> Offene Goals mit <b>!einlösen</b> anzeigen
+    </div>
+  `;
+} else {
+  goals.forEach(g => {
+    html += `
+      <div class="goal-line ${g.reached ? "reached" : ""}">
+        ${g.reached ? "✅" : "⏳"} ${g.hours} Stunden – ${g.title}
+      </div><br>
+    `;
+  });
+}
+
 
       box.innerHTML = html;
 
