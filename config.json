@@ -1,16 +1,16 @@
 {
   "twitch": {
-    "sub_t1": 6,
-    "sub_t2": 9,
-    "sub_t3": 24,
-    "bits_per_100": 3
+    "sub_t1": 3,
+    "sub_t2": 6,
+    "sub_t3": 12,
+    "bits_per_100": 2
   },
   "kick": {
     "sub": 10,
     "kicks_per_100": 3
   },
   "tipeee": {
-    "minutes_per_eur": 2
+    "minutes_per_eur": 1
   },
   "donation_goal": {
   "enabled": true,

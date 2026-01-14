@@ -1141,6 +1141,50 @@ def add_goal():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/goals/delete")
+def delete_goal():
+    raw = request.args.get("raw", "").strip()
+
+    if not raw:
+        return jsonify({"error": "raw parameter missing"}), 400
+
+    if not os.path.exists("goal.txt"):
+        return jsonify({"error": "goal.txt not found"}), 404
+
+    try:
+        with open("goal.txt", "r", encoding="utf-8") as f:
+            content = f.read().strip()
+
+        if not content:
+            return jsonify({"error": "goal.txt is empty"}), 400
+
+        # Ziele sauber splitten
+        goals = [g.strip() for g in content.split("|")]
+
+        if raw not in goals:
+            return jsonify({"error": "goal not found", "goal": raw}), 404
+
+        # Ziel entfernen
+        goals.remove(raw)
+
+        # Neu zusammensetzen
+        new_content = " | ".join(goals)
+
+        with open("goal.txt", "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+        print(f"[{ts()}] [GOALS] Deleted goal from goal.txt: {raw}")
+
+        return jsonify({
+            "status": "deleted",
+            "goal": raw,
+            "remaining": goals
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # === Happyhour API ===     
 @app.route("/happyhour")
 def happyhour():
